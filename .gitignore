@@ -1,0 +1,10 @@
+# Binaries
+ebnf-inspect
+/cmd/ebnf-inspect/ebnf-inspect
+
+# Test binaries
+*.test
+*.out
+
+# Go workspace file
+go.work
