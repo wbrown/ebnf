@@ -1,0 +1,45 @@
+(* Demonstration of Instaparse-style regex patterns *)
+(* This shows how regex patterns simplify grammar definitions *)
+
+(* Before: Complex identifier with multiple rules *)
+(* 
+var_name = id_start id_chars ;
+id_start = [a-z] | [A-Z] ;
+id_chars = id_char* ;
+id_char = [a-z] | [A-Z] | [0-9] | ['_'] ;
+*)
+
+(* After: Simple regex pattern *)
+identifier = #"[a-zA-Z][a-zA-Z0-9_]*" ;
+
+(* Whitespace handling *)
+ws = <#"\s+"> ;
+optional_ws = <#"\s*"> ;
+
+(* Numbers with optional decimals *)
+number = #"[0-9]+(\.[0-9]+)?" ;
+
+(* String with escape sequences *)
+string = '"' #"([^\"\\]|\\.)*" '"' ;
+
+(* Email validation *)
+email = #"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" ;
+
+(* URL pattern *)
+url = #"https?://[a-zA-Z0-9.-]+(/[a-zA-Z0-9._~:/?#[\]@!$&'()*+,;=-]*)?" ;
+
+(* Text content (excluding special characters) *)
+text_content = #"[^$@\[\r\n]+" ;
+
+(* Punctuation *)
+punctuation = #"[.!?,;:]" ;
+
+(* Line comment *)
+comment = #"//[^\r\n]*" ;
+
+(* Example rule using these patterns *)
+statement = optional_ws identifier optional_ws '=' optional_ws expression optional_ws ';' ;
+expression = number | identifier | string ;
+
+(* Complete example: variable declaration *)
+program = statement+ ;

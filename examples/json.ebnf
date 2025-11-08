@@ -1,0 +1,62 @@
+(* JSON Grammar *)
+(* Based on https://www.json.org/ specification *)
+
+json = <ws>* value <ws>* ;
+
+value = object
+      | array
+      | string
+      | number
+      | "true"
+      | "false"
+      | "null" ;
+
+(* Object: { "key": value, ... } *)
+object = <"{"> <ws>* <"}">
+       | <"{"> <ws>* members <ws>* <"}"> ;
+
+members = pair ( <ws>* <","> <ws>* pair )* ;
+
+pair = string <ws>* <":"> <ws>* value ;
+
+(* Array: [ value, value, ... ] *)
+array = <"["> <ws>* <"]">
+      | <"["> <ws>* elements <ws>* <"]"> ;
+
+elements = value ( <ws>* <","> <ws>* value )* ;
+
+(* String: "..." with escape sequences *)
+string = <'"'> string_chars <'"'> ;
+
+string_chars = string_char* ;
+
+string_char = unescaped_char
+            | escaped_char ;
+
+(* Any character except ", \, and control characters *)
+unescaped_char = [a-z] | [A-Z] | [0-9]
+               | " " | "!" | "#" | "$" | "%" | "&" | "'" | "(" | ")"
+               | "*" | "+" | "," | "-" | "." | "/" | ":" | ";" | "<"
+               | "=" | ">" | "?" | "@" | "[" | "]" | "^" | "_" | "`"
+               | "{" | "|" | "}" | "~" ;
+
+escaped_char = <"\\"> escape_sequence ;
+
+escape_sequence = "\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t"
+                | "u" hex_digit hex_digit hex_digit hex_digit ;
+
+hex_digit = [0-9] | [a-f] | [A-F] ;
+
+(* Number: integer with optional fraction and exponent *)
+number = int frac? exp? ;
+
+int = <"-">? ( "0" | [1-9] digit* ) ;
+
+digit = [0-9] ;
+
+frac = <"."> digit+ ;
+
+exp = ( <"e"> | <"E"> ) ( <"+"> | <"-"> )? digit+ ;
+
+(* Whitespace *)
+ws = " " | "\t" | "\n" | "\r" ;

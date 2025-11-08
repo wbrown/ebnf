@@ -1,0 +1,15 @@
+(* Simple arithmetic expression grammar *)
+(* Demonstrates basic EBNF with proper precedence *)
+
+expr = term ( <ws>* addop <ws>* term )* ;
+
+term = factor ( <ws>* mulop <ws>* factor )* ;
+
+factor = number
+       | <"("> <ws>* expr <ws>* <")"> ;
+
+addop = "+" | "-" ;
+mulop = "*" | "/" ;
+
+number = #"[0-9]+(\.[0-9]+)?" ;
+ws = #"\s+" ;
