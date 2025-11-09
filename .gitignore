@@ -10,3 +10,6 @@ ebnf-parse
 
 # Go workspace file
 go.work
+
+# IDE files
+.idea

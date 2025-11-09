@@ -60,6 +60,68 @@ if err != nil {
 }
 ```
 
+## Parsing Input
+
+Once you have a grammar, you can use it to parse input text:
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "os"
+    "github.com/wbrown/ebnf"
+    "github.com/wbrown/ebnf/parse"
+)
+
+func main() {
+    // Load a grammar
+    grammar, err := ebnf.LoadGrammar("examples/json.ebnf")
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Create a parser
+    parser := parse.New(grammar)
+
+    // Parse some JSON
+    input := `{"name": "Alice", "age": 30}`
+    tree, err := parser.Parse(input, "json")
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Print the parse tree
+    parse.PrintAST(os.Stdout, tree)
+
+    // Or use compact format
+    parse.CompactPrintAST(os.Stdout, tree)
+}
+```
+
+The parser produces a parse tree (`*parse.Node`) with:
+- `Rule` - The rule name that matched
+- `Value` - Consolidated text value (for leaf nodes)
+- `Children` - Child nodes
+- `Line`, `Column` - Source position
+- `Start`, `End` - Character positions in input
+
+## Complete Example: Calculator
+
+A complete working calculator is provided in [`examples/calculator/`](examples/calculator/) showing how to:
+- Load and parse using the arithmetic grammar
+- Walk the parse tree
+- Extract and evaluate expressions
+- Handle operator precedence correctly
+
+```bash
+cd examples/calculator
+go run main.go
+```
+
+See the [calculator README](examples/calculator/README.md) for a detailed explanation of how it works.
+
 ## Examples
 
 The `examples/` directory contains several demonstration grammars:
@@ -149,10 +211,47 @@ ordered = a / b / c ;     (* First match wins - PEG style *)
 ```
 
 ### Hidden Tokens
+
+There are two ways to hide elements from the parse tree:
+
+#### Hidden References
 ```ebnf
-(* Hide from AST *)
+(* Hide specific references *)
 expr = <"("> value <")"> ;     (* Parens hidden *)
 rule = <whitespace>* term ;    (* Whitespace hidden *)
+```
+
+#### Hidden Rule Definitions
+```ebnf
+(* Hide the rule wrapper itself *)
+<value> = object | array | string | number ;
+<digit> = [0-9] ;
+```
+
+When you define a rule as hidden (with angle brackets around the name), the rule node is removed from the parse tree and its children are promoted up. This is useful for:
+- Removing unnecessary wrapper nodes (like `<value>` which is just a choice)
+- Flattening the tree for easier processing
+- Keeping only semantically meaningful nodes
+
+**Example:**
+```ebnf
+pair = key <":"> value ;
+<value> = string | number ;
+```
+
+Without hidden rule definition:
+```
+pair
+  ├── key: "name"
+  └── value           ← unnecessary wrapper
+      └── string: "Alice"
+```
+
+With hidden rule definition:
+```
+pair
+  ├── key: "name"
+  └── string: "Alice"  ← direct child, cleaner
 ```
 
 ### Grouping and Lookahead
