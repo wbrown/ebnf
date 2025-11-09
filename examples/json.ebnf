@@ -3,13 +3,20 @@
 
 json = <ws>* value <ws>* ;
 
-value = object
-      | array
-      | string
-      | number
-      | "true"
-      | "false"
-      | "null" ;
+<value> = object
+        | array
+        | string
+        | number
+        | boolean
+        | null ;
+
+boolean = true | false ;
+
+true = <"true"> ;
+
+false = <"false"> ;
+
+null = <"null"> ;
 
 (* Object: { "key": value, ... } *)
 object = <"{"> <ws>* <"}">
@@ -26,33 +33,17 @@ array = <"["> <ws>* <"]">
 elements = value ( <ws>* <","> <ws>* value )* ;
 
 (* String: "..." with escape sequences *)
-string = <'"'> string_chars <'"'> ;
+(* Regex handles Unicode and escape sequences properly *)
+string = <'"'> string_content <'"'> ;
 
-string_chars = string_char* ;
-
-string_char = unescaped_char
-            | escaped_char ;
-
-(* Any character except ", \, and control characters *)
-unescaped_char = [a-z] | [A-Z] | [0-9]
-               | " " | "!" | "#" | "$" | "%" | "&" | "'" | "(" | ")"
-               | "*" | "+" | "," | "-" | "." | "/" | ":" | ";" | "<"
-               | "=" | ">" | "?" | "@" | "[" | "]" | "^" | "_" | "`"
-               | "{" | "|" | "}" | "~" ;
-
-escaped_char = <"\\"> escape_sequence ;
-
-escape_sequence = "\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t"
-                | "u" hex_digit hex_digit hex_digit hex_digit ;
-
-hex_digit = [0-9] | [a-f] | [A-F] ;
+<string_content> = #"([^\"\\]|\\[\"\\\/bfnrt]|\\u[0-9a-fA-F]{4})*" ;
 
 (* Number: integer with optional fraction and exponent *)
 number = int frac? exp? ;
 
-int = <"-">? ( "0" | [1-9] digit* ) ;
+int = "-"? ( "0" | [1-9] digit* ) ;
 
-digit = [0-9] ;
+<digit> = [0-9] ;
 
 frac = <"."> digit+ ;
 

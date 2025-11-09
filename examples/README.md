@@ -51,7 +51,7 @@ Shows how to write grammars that are deterministic and unambiguous.
 
 ## Running the Examples
 
-Each example can be loaded and inspected:
+### Parsing with a Grammar
 
 ```go
 package main
@@ -59,23 +59,49 @@ package main
 import (
     "fmt"
     "log"
+    "os"
     "github.com/wbrown/ebnf"
+    "github.com/wbrown/ebnf/parse"
 )
 
 func main() {
+    // Load the arithmetic grammar
     grammar, err := ebnf.LoadGrammar("examples/arithmetic.ebnf")
     if err != nil {
         log.Fatal(err)
     }
 
-    fmt.Printf("Loaded grammar with %d rules\n", len(grammar.Rules))
+    // Create a parser
+    parser := parse.New(grammar)
 
-    // Inspect a specific rule
-    expr := grammar.GetRule("expr")
-    if expr != nil {
-        fmt.Printf("Expression rule type: %s\n", ebnf.ExpressionType(expr.Expression))
+    // Parse an arithmetic expression
+    input := "2 + 3 * 4"
+    tree, err := parser.Parse(input, "expr")
+    if err != nil {
+        log.Fatal(err)
     }
+
+    // Print the parse tree
+    parse.PrintAST(os.Stdout, tree)
 }
 ```
 
-See `examples_test.go` for more examples of loading and working with these grammars.
+### Using the CLI Tool
+
+A command-line tool is provided for quick testing:
+
+```bash
+# Build the tool
+go build -o ebnf-parse ./cmd/ebnf-parse
+
+# Parse JSON
+echo '{"name": "Alice"}' | ./ebnf-parse -grammar examples/json.ebnf
+
+# Parse arithmetic with compact output
+echo "2 + 3 * 4" | ./ebnf-parse -grammar examples/arithmetic.ebnf -rule expr -compact
+
+# Enable debug output to see parsing trace
+./ebnf-parse -grammar examples/json.ebnf -input data.json -debug
+```
+
+See `examples_test.go` and `parse/*_test.go` for more examples of loading and working with these grammars.

@@ -1,6 +1,8 @@
 # Binaries
 ebnf-inspect
 /cmd/ebnf-inspect/ebnf-inspect
+ebnf-parse
+/cmd/ebnf-parse/ebnf-parse
 
 # Test binaries
 *.test
@@ -8,3 +10,6 @@ ebnf-inspect
 
 # Go workspace file
 go.work
+
+# IDE files
+.idea
