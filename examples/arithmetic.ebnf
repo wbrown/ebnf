@@ -1,15 +1,28 @@
-(* Simple arithmetic expression grammar *)
-(* Demonstrates basic EBNF with proper precedence *)
+(* Complete arithmetic grammar with S-expression-like structure *)
+(* Uses RIGHT recursion (works with recursive descent parsers) *)
+(* Each operation becomes its own node for clean transformation *)
 
-expr = <ws>* term ( <ws>* addop <ws>* term )* <ws>* ;
+expr = <ws>* add_sub <ws>* ;
 
-term = factor ( <ws>* mulop <ws>* factor )* ;
+(* Addition/subtraction level - hide the wrapper *)
+<add_sub> = add | sub | mul_div ;
 
-factor = number
-       | <"("> <ws>* expr <ws>* <")"> ;
+add = mul_div <ws>* <"+"> <ws>* add_sub ;
+sub = mul_div <ws>* <"-"> <ws>* add_sub ;
 
-addop = "+" | "-" ;
-mulop = "*" | "/" ;
+(* Multiplication/division level - hide the wrapper *)
+<mul_div> = mul | div | unary ;
+
+mul = unary <ws>* <"*"> <ws>* mul_div ;
+div = unary <ws>* <"/"> <ws>* mul_div ;
+
+(* Unary operations *)
+<unary> = neg | atom ;
+
+neg = <"-"> <ws>* atom ;
+
+(* Atomic terms - hide the wrapper *)
+<atom> = number | <"("> <ws>* add_sub <ws>* <")"> ;
 
 number = #"[0-9]+(\.[0-9]+)?" ;
-ws = #"\s+" ;
+<ws> = #"\s+" ;

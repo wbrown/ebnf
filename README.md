@@ -9,6 +9,7 @@ A pure Go parser for Extended Backus-Naur Form (EBNF) grammars with support for 
 - **Regex Patterns**: Instaparse-style `#"regex"` for complex patterns
 - **Hidden Tokens**: `<token>` syntax to omit tokens from AST
 - **PEG Features**: Ordered choice (`/`), lookahead (`!`, `&`)
+- **Tree Transformation**: Elegant parse tree processing with rule-based transformation functions
 - **Comments**: C-style `(* comment *)` supported
 - **Multiple EBNF Variants**: Supports `=`, `:=`, `::=`, and `<-` as assignment operators
 
@@ -107,32 +108,155 @@ The parser produces a parse tree (`*parse.Node`) with:
 - `Line`, `Column` - Source position
 - `Start`, `End` - Character positions in input
 
+## Tree Transformation
+
+The `parse.Transform` function allows you to process parse trees elegantly by mapping rule names to transformation functions. This is inspired by Instaparse's transform feature and is perfect for evaluation, compilation, or AST manipulation.
+
+### Basic Example
+
+```go
+import (
+    "strconv"
+    "github.com/wbrown/ebnf/parse"
+)
+
+// Define transformations for each rule
+transforms := parse.TransformMap{
+    "number": func(s string) float64 {
+        f, _ := strconv.ParseFloat(s, 64)
+        return f
+    },
+    "add": func(a, b float64) float64 {
+        return a + b
+    },
+    "mul": func(a, b float64) float64 {
+        return a * b
+    },
+}
+
+// Parse and transform in one go
+tree, _ := parser.Parse("2 + 3 * 4", "expr")
+result, _ := parse.Transform(tree, transforms)
+fmt.Printf("Result: %.2f\n", result) // Result: 14.00
+```
+
+### How It Works
+
+1. **Bottom-up**: Transformations are applied recursively from leaves to root
+2. **Rule-based**: Each rule in the `TransformMap` gets its function called on matching nodes
+3. **Type-flexible**: Functions can have any signature; automatic type conversion is attempted
+4. **Pass-through**: Rules without transforms pass their children up automatically
+
+### Advanced Example: Calculator with S-Expression Trees
+
+The `examples/arithmetic.ebnf` grammar uses strategic hiding and right recursion to create clean, S-expression-like parse trees. Each operation becomes its own node, making transformations trivial:
+
+```go
+// With the S-expression-like grammar, each operation is just one line!
+transforms := parse.TransformMap{
+    "number": func(s string) float64 {
+        f, _ := strconv.ParseFloat(s, 64)
+        return f
+    },
+    // Binary operations - just plain math!
+    "add": func(a, b float64) float64 { return a + b },
+    "sub": func(a, b float64) float64 { return a - b },
+    "mul": func(a, b float64) float64 { return a * b },
+    "div": func(a, b float64) float64 { return a / b },
+    // Unary negation
+    "neg": func(a float64) float64 { return -a },
+}
+
+// Parse and evaluate - handles precedence, parentheses, and negation
+tree, _ := parser.Parse("(2 + 3) * 4", "expr")
+result, _ := parse.Transform(tree, transforms)
+fmt.Printf("Result: %.2f\n", result) // Result: 20.00
+
+// Works with negative numbers too
+tree, _ = parser.Parse("-5 + 3 * 2", "expr")
+result, _ = parse.Transform(tree, transforms)
+fmt.Printf("Result: %.2f\n", result) // Result: 1.00
+```
+
+The parse tree for `"2 + 3 * 4"` looks like:
+```
+expr
+└── add
+    ├── number "2"
+    └── mul
+        ├── number "3"
+        └── number "4"
+```
+
+Each operation is a distinct node, making the tree structure mirror the mathematical expression perfectly.
+
+### Helper Functions
+
+The parse package provides several helper functions for common transformation patterns:
+
+- `parse.Identity` - Returns first argument unchanged
+- `parse.First` - Returns first of multiple arguments
+- `parse.Last` - Returns last of multiple arguments
+- `parse.Concat` - Concatenates string arguments
+- `parse.Flatten` - Returns all arguments as a slice
+
+### Error Handling
+
+Transformation functions can return errors as a second value:
+
+```go
+transforms := parse.TransformMap{
+    "divide": func(a, b float64) (float64, error) {
+        if b == 0 {
+            return 0, fmt.Errorf("division by zero")
+        }
+        return a / b, nil
+    },
+}
+
+result, err := parse.Transform(tree, transforms)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
 ## Complete Example: Calculator
 
-A complete working calculator is provided in [`examples/calculator/`](examples/calculator/) showing how to:
-- Load and parse using the arithmetic grammar
-- Walk the parse tree
-- Extract and evaluate expressions
-- Handle operator precedence correctly
+A complete working calculator is provided in [`examples/calculator/`](examples/calculator/) showing:
+- S-expression-like parse trees using right recursion and strategic hiding
+- Tree transformation with one-line operations
+- Support for precedence, parentheses, and negative numbers
 
 ```bash
 cd examples/calculator
 go run main.go
 ```
 
-See the [calculator README](examples/calculator/README.md) for a detailed explanation of how it works.
+See the [calculator README](examples/calculator/README.md) for details.
 
 ## Examples
 
 The `examples/` directory contains several demonstration grammars:
 
 ### [arithmetic.ebnf](examples/arithmetic.ebnf)
-A simple expression grammar showing operator precedence:
+Complete arithmetic with S-expression-like trees:
 ```ebnf
-expr = term ( <ws>* addop <ws>* term )* ;
-term = factor ( <ws>* mulop <ws>* factor )* ;
-factor = number | <"("> <ws>* expr <ws>* <")"> ;
+(* Each operation becomes its own node *)
+<add_sub> = add | sub | mul_div ;
+add = mul_div <"+"> add_sub ;
+sub = mul_div <"-"> add_sub ;
+
+<mul_div> = mul | div | unary ;
+mul = unary <"*"> mul_div ;
+div = unary <"/"> mul_div ;
+
+<unary> = neg | atom ;
+neg = <"-"> atom ;
+
+<atom> = number | <"("> add_sub <")"> ;
 ```
+
+This creates trees like `add(2, mul(3, 4))` instead of flat operator lists, making transformations trivial.
 
 ### [json.ebnf](examples/json.ebnf)
 Complete JSON grammar demonstrating:

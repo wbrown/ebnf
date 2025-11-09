@@ -16,8 +16,8 @@ func TestArithmeticGrammar(t *testing.T) {
 		t.Fatal("Expected rules in arithmetic grammar")
 	}
 
-	// Check key rules exist
-	keyRules := []string{"expr", "term", "factor", "number"}
+	// Check key rules exist (S-expression-like structure)
+	keyRules := []string{"expr", "add", "sub", "mul", "div", "neg", "number"}
 	for _, name := range keyRules {
 		if grammar.GetRule(name) == nil {
 			t.Errorf("Missing expected rule: %s", name)
