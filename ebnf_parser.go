@@ -106,32 +106,51 @@ func (p *Parser) parseRule() (*Rule, error) {
 		}
 		return p.parseRule()
 	}
-	
+
+	// Check for hidden rule: <rulename> = ...
+	hidden := false
+	if p.current.Type == TokenLAngle {
+		hidden = true
+		if err := p.advanceSkipComments(); err != nil {
+			return nil, err
+		}
+	}
+
 	if p.current.Type != TokenIdent {
-		return nil, fmt.Errorf("expected rule name at line %d, col %d", 
+		return nil, fmt.Errorf("expected rule name at line %d, col %d",
 			p.current.Line, p.current.Col)
 	}
-	
-	rule := &Rule{Name: p.current.Value}
-	
+
+	rule := &Rule{
+		Name:   p.current.Value,
+		Hidden: hidden,
+	}
+
 	if err := p.advanceSkipComments(); err != nil {
 		return nil, err
 	}
-	
+
+	// If rule was hidden, expect closing >
+	if hidden {
+		if err := p.expect(TokenRAngle); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := p.expect(TokenEquals); err != nil {
 		return nil, err
 	}
-	
+
 	expr, err := p.parseExpression()
 	if err != nil {
 		return nil, err
 	}
 	rule.Expression = expr
-	
+
 	if err := p.expect(TokenSemi); err != nil {
 		return nil, err
 	}
-	
+
 	return rule, nil
 }
 
