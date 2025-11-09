@@ -9,6 +9,7 @@ type Grammar struct {
 type Rule struct {
 	Name       string
 	Expression Expression
+	Hidden     bool // true if rule name is wrapped in < >
 }
 
 // Expression is the interface for all EBNF expressions

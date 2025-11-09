@@ -420,6 +420,11 @@ func (p *Parser) parsePositiveLookahead(pos *ebnf.PositiveLookahead) ([]*Node, e
 
 // parseNonTerminal parses a reference to another rule
 func (p *Parser) parseNonTerminal(nt *ebnf.NonTerminal) ([]*Node, error) {
+	rule := p.grammar.GetRule(nt.Name)
+	if rule == nil {
+		return nil, fmt.Errorf("rule %q not found", nt.Name)
+	}
+
 	node, err := p.parseRule(nt.Name)
 	if err != nil {
 		return nil, err
@@ -431,9 +436,15 @@ func (p *Parser) parseNonTerminal(nt *ebnf.NonTerminal) ([]*Node, error) {
 		return []*Node{}, nil
 	}
 
-	// Check if this non-terminal reference is hidden
+	// Check if this non-terminal reference is hidden (like <digit>)
 	if nt.Hidden {
 		return []*Node{}, nil
+	}
+
+	// Check if the rule definition itself is hidden (like <digit> = ...)
+	// In that case, return the children directly without the rule wrapper
+	if rule.Hidden {
+		return node.Children, nil
 	}
 
 	return []*Node{node}, nil
@@ -549,9 +560,8 @@ func (p *Parser) parseOptional(opt *ebnf.Optional) ([]*Node, error) {
 
 // parseRepetition parses zero or more (*)
 func (p *Parser) parseRepetition(rep *ebnf.Repetition) ([]*Node, error) {
-	// Special handling for repetitions that should be consolidated
-	// This includes hidden expressions and character classes
-	if p.isHiddenExpression(rep.Expr) || p.isCharacterClassExpression(rep.Expr) {
+	// Special handling for character class repetitions that should be consolidated
+	if p.isCharacterClassExpression(rep.Expr) {
 		return p.parseConsolidatedRepetition(rep.Expr, false)
 	}
 
@@ -588,6 +598,10 @@ func (p *Parser) isHiddenExpression(expr ebnf.Expression) bool {
 	case *ebnf.Hidden:
 		return true
 	case *ebnf.NonTerminal:
+		// Check if the non-terminal reference itself is hidden
+		if e.Hidden {
+			return true
+		}
 		// Check if the non-terminal rule has a hidden expression
 		if rule := p.grammar.GetRule(e.Name); rule != nil {
 			// Recursively check if the rule's expression is hidden
@@ -611,42 +625,35 @@ func (p *Parser) isCharacterClassExpression(expr ebnf.Expression) bool {
 	return false
 }
 
-// parseConsolidatedRepetition handles repetitions that should be consolidated into a single text node
-// This includes hidden expressions and character classes
+// parseConsolidatedRepetition handles character class repetitions
+// Creates a single consolidated value node from multiple matches
 func (p *Parser) parseConsolidatedRepetition(expr ebnf.Expression, requireOne bool) ([]*Node, error) {
 	startPos := p.pos
 	startLine := p.line
 	startCol := p.col
 	count := 0
 
-	// fmt.Printf("parseHiddenRepetition: starting at pos=%d\n", p.pos)
-
 	for {
 		savedPos, savedLine, savedCol := p.savePosition()
 
 		_, err := p.parseExpression(expr)
 		if err != nil {
-			// fmt.Printf("  iteration %d failed: %v\n", count, err)
 			p.restorePosition(savedPos, savedLine, savedCol)
 			break
 		}
 
 		// Check if we made progress
 		if p.pos == savedPos {
-			// fmt.Printf("  no progress at iteration %d\n", count)
 			break
 		}
 		count++
-		// fmt.Printf("  iteration %d succeeded, pos=%d->%d\n", count, savedPos, p.pos)
 	}
-
-	// fmt.Printf("parseHiddenRepetition: count=%d, requireOne=%v\n", count, requireOne)
 
 	if requireOne && count == 0 {
 		return nil, fmt.Errorf("expected at least one occurrence")
 	}
 
-	// Create a single text node with the matched content
+	// Create a single consolidated value node from the matched text
 	if p.pos > startPos {
 		node := &Node{
 			Value:  p.input[startPos:p.pos],
@@ -663,9 +670,8 @@ func (p *Parser) parseConsolidatedRepetition(expr ebnf.Expression, requireOne bo
 
 // parseOneOrMore parses one or more (+)
 func (p *Parser) parseOneOrMore(rep *ebnf.OneOrMore) ([]*Node, error) {
-	// Special handling for repetitions that should be consolidated
-	// This includes hidden expressions and character classes
-	if p.isHiddenExpression(rep.Expr) || p.isCharacterClassExpression(rep.Expr) {
+	// Special handling for character class repetitions that should be consolidated
+	if p.isCharacterClassExpression(rep.Expr) {
 		return p.parseConsolidatedRepetition(rep.Expr, true)
 	}
 
