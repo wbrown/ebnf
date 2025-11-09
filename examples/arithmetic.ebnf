@@ -1,7 +1,7 @@
 (* Simple arithmetic expression grammar *)
 (* Demonstrates basic EBNF with proper precedence *)
 
-expr = term ( <ws>* addop <ws>* term )* ;
+expr = <ws>* term ( <ws>* addop <ws>* term )* <ws>* ;
 
 term = factor ( <ws>* mulop <ws>* factor )* ;
 
