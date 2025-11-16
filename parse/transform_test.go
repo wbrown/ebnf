@@ -310,7 +310,8 @@ func TestTransform_HelperFunctions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := callTransform(tt.helper, tt.args)
+			// Helper functions don't use context or node parameters, pass nil
+			result, err := callTransform(tt.helper, nil, nil, tt.args)
 			if err != nil {
 				t.Fatalf("callTransform failed: %v", err)
 			}

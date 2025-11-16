@@ -13,3 +13,6 @@ go.work
 
 # IDE files
 .idea
+
+# Source code
+instaparse
