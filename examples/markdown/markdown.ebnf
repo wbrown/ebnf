@@ -1,0 +1,32 @@
+(* Simple Markdown Grammar for HTML Transformation Demo *)
+
+document = (block (<newline> | <space>)*)* ;
+
+block = heading | list | code_block | horizontal_rule | paragraph ;
+
+heading = heading_level <space>? (text | <space>)* <newline>? ;
+heading_level = "#" | "##" | "###" | "####" | "#####" | "######" ;
+
+paragraph = (inline | <space>)+ <newline>? <newline>? ;
+
+list = list_item+ ;
+list_item = <"- "> (inline | <space>)+ <newline>? ;
+
+code_block = <"```"> language? <newline> code_content <"```"> <newline>? ;
+language = #"[a-z]+" ;
+code_content = #"[^`]*" ;
+
+horizontal_rule = <"---"> <newline>? ;
+
+inline = text | bold | italic | code | link ;
+
+text = #"[^_*`\[\n\s]+" ;
+bold = <"**"> text <"**"> ;
+italic = <"_"> text <"_"> ;
+code = <"`"> text <"`"> ;
+link = <"["> link_text <"]("> link_url <")"> ;
+link_text = #"[^\]]+" ;
+link_url = #"[^)]+" ;
+
+space = " " | "\t" ;
+newline = "\n" ;
