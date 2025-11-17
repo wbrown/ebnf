@@ -263,7 +263,12 @@ func callTransformWithPass(fn TransformFunc, ctx *TransformContext, node *Node, 
 	// Convert callArgs to reflect.Value slice
 	argVals := make([]reflect.Value, len(callArgs))
 	for i, arg := range callArgs {
-		argVals[i] = reflect.ValueOf(arg)
+		if arg == nil {
+			// Create a proper nil interface{} value to avoid zero Value panic
+			argVals[i] = reflect.Zero(reflect.TypeOf((*interface{})(nil)).Elem())
+		} else {
+			argVals[i] = reflect.ValueOf(arg)
+		}
 	}
 
 	// Check argument count
