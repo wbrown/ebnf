@@ -25,36 +25,51 @@ type TransformFunc interface{}
 // detects which style is used based on the function's parameter types.
 type TransformMap map[string]TransformFunc
 
+// TransformOptions configures transform behavior
+type TransformOptions struct {
+	// RequireAllTransforms causes a panic when a grammar rule has no transform
+	// This helps catch missing transforms during development
+	RequireAllTransforms bool
+}
+
 // Transform applies transformations to a parse tree in a bottom-up manner.
 // Each rule in the transformMap will have its corresponding function applied
 // to the node's children, and the result replaces the node in the tree.
 //
 // Example (old style, without node access):
-//   result := parse.Transform(tree, parse.TransformMap{
-//       "add": func(a, b float64) float64 { return a + b },
-//       "number": strconv.ParseFloat,
-//   })
+//
+//	result := parse.Transform(tree, parse.TransformMap{
+//	    "add": func(a, b float64) float64 { return a + b },
+//	    "number": strconv.ParseFloat,
+//	})
 //
 // Example (node-aware, with position access):
-//   result := parse.Transform(tree, parse.TransformMap{
-//       "number": func(node *Node, s string) (*Number, error) {
-//           val, _ := strconv.Atoi(s)
-//           return &Number{Value: val, Line: node.Line}, nil
-//       },
-//   })
+//
+//	result := parse.Transform(tree, parse.TransformMap{
+//	    "number": func(node *Node, s string) (*Number, error) {
+//	        val, _ := strconv.Atoi(s)
+//	        return &Number{Value: val, Line: node.Line}, nil
+//	    },
+//	})
 //
 // Example (context-aware, with tree, parent, siblings access):
-//   result := parse.Transform(tree, parse.TransformMap{
-//       "number": func(ctx *TransformContext, s string) (*Number, error) {
-//           val, _ := strconv.Atoi(s)
-//           return &Number{Value: val, Line: ctx.Node.Line}, nil
-//       },
-//   })
+//
+//	result := parse.Transform(tree, parse.TransformMap{
+//	    "number": func(ctx *TransformContext, s string) (*Number, error) {
+//	        val, _ := strconv.Atoi(s)
+//	        return &Number{Value: val, Line: ctx.Node.Line}, nil
+//	    },
+//	})
 func Transform(tree *ParseTree, transforms TransformMap) (interface{}, error) {
+	return TransformWithOptions(tree, transforms, TransformOptions{RequireAllTransforms: false})
+}
+
+// TransformWithOptions applies transformations with custom options
+func TransformWithOptions(tree *ParseTree, transforms TransformMap, opts TransformOptions) (interface{}, error) {
 	if tree == nil || tree.Root == nil {
 		return nil, fmt.Errorf("cannot transform nil tree")
 	}
-	return transformNodeWithContext(tree.Root, nil, nil, -1, tree, transforms, false)
+	return transformNodeWithContextAndOpts(tree.Root, nil, nil, -1, tree, transforms, false, 0, opts)
 }
 
 // TransformNode applies transformations to a single node and its descendants.
@@ -91,6 +106,11 @@ func transformNodeWithContext(node *Node, parent *Node, siblings []*Node, index 
 // transformNodeWithContextAndPass recursively transforms a node with context and pass number.
 // The pass number is included in error context for multi-pass transformations.
 func transformNodeWithContextAndPass(node *Node, parent *Node, siblings []*Node, index int, tree *ParseTree, transforms TransformMap, preserveStructure bool, passNumber int) (interface{}, error) {
+	return transformNodeWithContextAndOpts(node, parent, siblings, index, tree, transforms, preserveStructure, passNumber, TransformOptions{RequireAllTransforms: false})
+}
+
+// transformNodeWithContextAndOpts recursively transforms a node with full options
+func transformNodeWithContextAndOpts(node *Node, parent *Node, siblings []*Node, index int, tree *ParseTree, transforms TransformMap, preserveStructure bool, passNumber int, opts TransformOptions) (interface{}, error) {
 	// Base case: terminal node (leaf)
 	if node.IsTerminal() {
 		// If there's a transform for this rule, apply it
@@ -125,7 +145,7 @@ func transformNodeWithContextAndPass(node *Node, parent *Node, siblings []*Node,
 	// Recursively transform all children first (bottom-up)
 	transformedChildren := make([]interface{}, len(node.Children))
 	for i, child := range node.Children {
-		transformed, err := transformNodeWithContextAndPass(child, node, node.Children, i, tree, transforms, preserveStructure, passNumber)
+		transformed, err := transformNodeWithContextAndOpts(child, node, node.Children, i, tree, transforms, preserveStructure, passNumber, opts)
 		if err != nil {
 			// Error already wrapped with context from child
 			return nil, err
@@ -186,13 +206,20 @@ func transformNodeWithContextAndPass(node *Node, parent *Node, siblings []*Node,
 				// Create a synthetic node for the transformed value
 				// Store both string representation (for compatibility) and actual typed value
 				preservedNode.Children[i] = &Node{
-					Rule:            "_transformed",
-					Value:           fmt.Sprintf("%v", tc), // String representation
+					Rule:             "_transformed",
+					Value:            fmt.Sprintf("%v", tc), // String representation
 					TransformedValue: tc,                    // Actual typed value (preserves type)
 				}
 			}
 		}
 		return preservedNode, nil
+	}
+
+	// No transform and not preserving structure
+	if opts.RequireAllTransforms {
+		// Panic to catch missing transforms during development
+		panic(fmt.Sprintf("no transform defined for rule '%s' at line %d, column %d",
+			node.Rule, node.Line, node.Column))
 	}
 
 	// Default behavior: return children as-is (flatten)
@@ -221,7 +248,7 @@ func callTransformWithPass(fn TransformFunc, ctx *TransformContext, node *Node, 
 	if node != nil {
 		ruleName = node.Rule
 	}
-	
+
 	// Verify it's a function
 	if fnType.Kind() != reflect.Func {
 		err := fmt.Errorf("transform must be a function, got %T", fn)
@@ -229,7 +256,7 @@ func callTransformWithPass(fn TransformFunc, ctx *TransformContext, node *Node, 
 	}
 
 	numIn := fnType.NumIn()
-	
+
 	// Check parameter types to determine function signature
 	firstParamIsContext := numIn > 0 && fnType.In(0) == reflect.TypeOf((*TransformContext)(nil))
 	firstParamIsNode := numIn > 0 && fnType.In(0) == reflect.TypeOf((*Node)(nil))
@@ -237,7 +264,7 @@ func callTransformWithPass(fn TransformFunc, ctx *TransformContext, node *Node, 
 
 	// Build argument list based on function signature
 	callArgs := make([]interface{}, 0, len(args)+2) // Pre-allocate with room for ctx/node
-	
+
 	// Handle context parameter (first or only special param)
 	if firstParamIsContext {
 		callArgs = append(callArgs, ctx)
@@ -263,7 +290,12 @@ func callTransformWithPass(fn TransformFunc, ctx *TransformContext, node *Node, 
 	// Convert callArgs to reflect.Value slice
 	argVals := make([]reflect.Value, len(callArgs))
 	for i, arg := range callArgs {
-		argVals[i] = reflect.ValueOf(arg)
+		if arg == nil {
+			// Create a proper nil interface{} value to avoid zero Value panic
+			argVals[i] = reflect.Zero(reflect.TypeOf((*interface{})(nil)).Elem())
+		} else {
+			argVals[i] = reflect.ValueOf(arg)
+		}
 	}
 
 	// Check argument count
@@ -328,7 +360,7 @@ func callTransformWithPass(fn TransformFunc, ctx *TransformContext, node *Node, 
 		}()
 		results = fnVal.Call(convertedArgs)
 	}()
-	
+
 	// If panic occurred, return the error
 	if panicErr != nil {
 		return nil, panicErr
@@ -338,7 +370,7 @@ func callTransformWithPass(fn TransformFunc, ctx *TransformContext, node *Node, 
 	if len(results) == 0 {
 		return nil, nil
 	}
-	
+
 	// Extract the main return value
 	var returnVal interface{}
 	if len(results) == 1 {
@@ -358,7 +390,7 @@ func callTransformWithPass(fn TransformFunc, ctx *TransformContext, node *Node, 
 		}
 		return returnVals, nil
 	}
-	
+
 	// Check if return value is TransformResult
 	if tr, ok := returnVal.(*TransformResult); ok {
 		// Store metadata in context for child transforms to access
@@ -378,7 +410,7 @@ func callTransformWithPass(fn TransformFunc, ctx *TransformContext, node *Node, 
 		// Return the value, not the wrapper
 		return tr.Value, nil
 	}
-	
+
 	// Regular return value
 	return returnVal, nil
 }

@@ -21,13 +21,17 @@ type Parser struct {
 	// Focused debugging
 	focusPos   int  // Position to focus on (-1 = disabled)
 	focusRange int  // Range around focus position
+	
+	// Regex cache to avoid recompiling the same patterns
+	regexCache map[string]*regexp.Regexp
 }
 
 // New creates a new parser with the given EBNF grammar
 func New(grammar *ebnf.Grammar) *Parser {
 	return &Parser{
-		grammar:  grammar,
-		focusPos: -1,
+		grammar:    grammar,
+		focusPos:   -1,
+		regexCache: make(map[string]*regexp.Regexp),
 	}
 }
 
@@ -330,10 +334,18 @@ func (p *Parser) parseRegex(regex *ebnf.Regex) ([]*Node, error) {
 		return nil, fmt.Errorf("unexpected EOF at line %d col %d, expected pattern %q", p.line, p.col, regex.Pattern)
 	}
 
-	// Compile the regex with anchoring to match from the start
-	re, err := regexp.Compile("^" + regex.Pattern)
-	if err != nil {
-		return nil, fmt.Errorf("invalid regex pattern %q: %v", regex.Pattern, err)
+	// Get or compile the regex (with caching)
+	cacheKey := "^" + regex.Pattern
+	re, ok := p.regexCache[cacheKey]
+	if !ok {
+		// Compile the regex with anchoring to match from the start
+		var err error
+		re, err = regexp.Compile(cacheKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid regex pattern %q: %v", regex.Pattern, err)
+		}
+		// Cache the compiled regex
+		p.regexCache[cacheKey] = re
 	}
 
 	// Find match at current position
