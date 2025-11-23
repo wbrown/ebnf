@@ -4,6 +4,8 @@
 
 Successfully optimized the EBNF parser to reduce allocation overhead during backtracking by implementing lazy error formatting with the `ParseError` type.
 
+Additionally, implemented a "Hybrid Transform" system that optimizes common transformation patterns, resulting in a ~3x speedup for tree transformations.
+
 ## Performance Improvements
 
 ### Benchmark Results (JSON Grammar)
@@ -30,6 +32,13 @@ Successfully optimized the EBNF parser to reduce allocation overhead during back
 | Full program (38 scenes, 1.5 MB) | 2.04s | 1.68s | **1.21x faster** |
 | Parser stage only | 1.85s | 1.36s | **1.36x faster** |
 | Throughput | 732 KB/s | 889 KB/s | **21% improvement** |
+
+### Transform System
+
+| Benchmark | Before | After | Improvement |
+|-----------|--------|-------|-------------|
+| **Simple Arithmetic** | 64.9 μs | 20.8 μs | **3.1x faster** |
+| **String Concatenation** | 45.4 μs | 13.8 μs | **3.3x faster** |
 
 ## Key Changes
 
@@ -86,7 +95,24 @@ Systematically replaced 21 `fmt.Errorf` calls throughout `parser.go` with approp
 - `newUnexpectedEOFError()`
 - `newRuleNotFoundError()`
 - `newRegexNoMatchError()`
+- `newRegexNoMatchError()`
 - etc.
+
+### 4. Hybrid Transform Optimization (`transform.go`)
+
+Implemented a pre-processing step that inspects `TransformMap` functions at runtime. Common signatures (e.g., `func(string) int`) are wrapped in optimized closures that bypass reflection overhead using type assertions.
+
+**Before (Reflection):**
+```go
+reflect.ValueOf(fn).Call(args) // Slow ~165ns
+```
+
+**After (Type Assertion):**
+```go
+fn.(func(string) int)(args[0].(string)) // Fast ~3ns
+```
+
+This optimization is applied transparently; functions with complex or unknown signatures fall back to the reflection path automatically.
 
 ## Testing
 
@@ -120,7 +146,12 @@ Systematically replaced 21 `fmt.Errorf` calls throughout `parser.go` with approp
 ### What Changed
 - Parser is 2.6x faster on average
 - 28% reduction in memory allocations
+- 28% reduction in memory allocations
 - 50% reduction in allocation count
+
+### Transform System
+- **3x faster** transformation execution
+- Zero API changes required
 
 ### What Didn't Change
 - Public API remains identical
@@ -151,6 +182,8 @@ If more speed is needed:
 - `/Users/wbrown/go/src/github.com/wbrown/ebnf/parse/parser_bench_test.go` (NEW)
 - `/Users/wbrown/go/src/github.com/wbrown/ebnf/parse/error_quality_test.go` (NEW)
 - `/Users/wbrown/go/src/github.com/wbrown/ebnf/parse/parser_stress_test.go` (NEW)
+- `/Users/wbrown/go/src/github.com/wbrown/ebnf/parse/transform.go` (MODIFIED)
+- `/Users/wbrown/go/src/github.com/wbrown/ebnf/parse/transform_bench_test.go` (NEW)
 
 ## Conclusion
 

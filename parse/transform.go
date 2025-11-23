@@ -25,6 +25,12 @@ type TransformFunc interface{}
 // detects which style is used based on the function's parameter types.
 type TransformMap map[string]TransformFunc
 
+// fastTransform is a pre-optimized function wrapper that avoids reflection overhead
+type fastTransform func(*TransformContext, *Node, []interface{}, int) (interface{}, error)
+
+// fastTransformMap maps rule names to optimized transform functions
+type fastTransformMap map[string]fastTransform
+
 // TransformOptions configures transform behavior
 type TransformOptions struct {
 	// RequireAllTransforms causes a panic when a grammar rule has no transform
@@ -69,14 +75,28 @@ func TransformWithOptions(tree *ParseTree, transforms TransformMap, opts Transfo
 	if tree == nil || tree.Root == nil {
 		return nil, fmt.Errorf("cannot transform nil tree")
 	}
-	return transformNodeWithContextAndOpts(tree.Root, nil, nil, -1, tree, transforms, false, 0, opts)
+
+	// Pre-optimize the transform map
+	fastTransforms := make(fastTransformMap, len(transforms))
+	for rule, fn := range transforms {
+		fastTransforms[rule] = optimizeTransform(fn)
+	}
+
+	return transformNodeWithContextAndOpts(tree.Root, nil, nil, -1, tree, fastTransforms, false, 0, opts)
 }
 
 // TransformNode applies transformations to a single node and its descendants.
 func TransformNode(node *Node, transforms TransformMap) (interface{}, error) {
 	// Create a minimal tree wrapper for context
 	tree := &ParseTree{Root: node, Input: ""}
-	return transformNodeWithContext(node, nil, nil, -1, tree, transforms, false)
+
+	// Pre-optimize the transform map
+	fastTransforms := make(fastTransformMap, len(transforms))
+	for rule, fn := range transforms {
+		fastTransforms[rule] = optimizeTransform(fn)
+	}
+
+	return transformNodeWithContext(node, nil, nil, -1, tree, fastTransforms, false)
 }
 
 // TransformPreserveStructure applies transformations while preserving tree structure.
@@ -92,25 +112,32 @@ func transformPreserveStructureWithPass(tree *ParseTree, transforms TransformMap
 	if tree == nil || tree.Root == nil {
 		return nil, fmt.Errorf("cannot transform nil tree")
 	}
-	return transformNodeWithContextAndPass(tree.Root, nil, nil, -1, tree, transforms, true, passNumber)
+
+	// Pre-optimize the transform map
+	fastTransforms := make(fastTransformMap, len(transforms))
+	for rule, fn := range transforms {
+		fastTransforms[rule] = optimizeTransform(fn)
+	}
+
+	return transformNodeWithContextAndPass(tree.Root, nil, nil, -1, tree, fastTransforms, true, passNumber)
 }
 
 // transformNodeWithContext recursively transforms a node and its children with context.
 // It tracks parent, siblings, and index information for context-aware transforms.
 // If preserveStructure is true, nodes without transforms are preserved as Node objects
 // instead of being flattened to their children.
-func transformNodeWithContext(node *Node, parent *Node, siblings []*Node, index int, tree *ParseTree, transforms TransformMap, preserveStructure bool) (interface{}, error) {
+func transformNodeWithContext(node *Node, parent *Node, siblings []*Node, index int, tree *ParseTree, transforms fastTransformMap, preserveStructure bool) (interface{}, error) {
 	return transformNodeWithContextAndPass(node, parent, siblings, index, tree, transforms, preserveStructure, 0)
 }
 
 // transformNodeWithContextAndPass recursively transforms a node with context and pass number.
 // The pass number is included in error context for multi-pass transformations.
-func transformNodeWithContextAndPass(node *Node, parent *Node, siblings []*Node, index int, tree *ParseTree, transforms TransformMap, preserveStructure bool, passNumber int) (interface{}, error) {
+func transformNodeWithContextAndPass(node *Node, parent *Node, siblings []*Node, index int, tree *ParseTree, transforms fastTransformMap, preserveStructure bool, passNumber int) (interface{}, error) {
 	return transformNodeWithContextAndOpts(node, parent, siblings, index, tree, transforms, preserveStructure, passNumber, TransformOptions{RequireAllTransforms: false})
 }
 
 // transformNodeWithContextAndOpts recursively transforms a node with full options
-func transformNodeWithContextAndOpts(node *Node, parent *Node, siblings []*Node, index int, tree *ParseTree, transforms TransformMap, preserveStructure bool, passNumber int, opts TransformOptions) (interface{}, error) {
+func transformNodeWithContextAndOpts(node *Node, parent *Node, siblings []*Node, index int, tree *ParseTree, transforms fastTransformMap, preserveStructure bool, passNumber int, opts TransformOptions) (interface{}, error) {
 	// Base case: terminal node (leaf)
 	if node.IsTerminal() {
 		// If there's a transform for this rule, apply it
@@ -129,7 +156,7 @@ func transformNodeWithContextAndOpts(node *Node, parent *Node, siblings []*Node,
 			if node.Rule == "_transformed" && node.TransformedValue != nil {
 				value = node.TransformedValue
 			}
-			return callTransformWithPass(fn, ctx, node, []interface{}{value}, passNumber)
+			return fn(ctx, node, []interface{}{value}, passNumber)
 		}
 		// Otherwise return the terminal value as-is (or node if preserving structure)
 		if preserveStructure {
@@ -183,7 +210,7 @@ func transformNodeWithContextAndOpts(node *Node, parent *Node, siblings []*Node,
 				}
 			}
 		}
-		return callTransformWithPass(fn, ctx, node, unwrappedChildren, passNumber)
+		return fn(ctx, node, unwrappedChildren, passNumber)
 	}
 
 	// No transform for this rule
@@ -534,4 +561,113 @@ func Concat(args ...interface{}) interface{} {
 		}
 	}
 	return result
+}
+
+// optimizeTransform inspects the function and returns a fast wrapper if possible
+func optimizeTransform(fn interface{}) fastTransform {
+	// Common signatures optimization
+	switch f := fn.(type) {
+	// func(string) (float64, error) - e.g. strconv.ParseFloat
+	case func(string) (float64, error):
+		return func(ctx *TransformContext, node *Node, args []interface{}, pass int) (val interface{}, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					err = wrapPanic(r, ctx, node.Rule, pass)
+				}
+			}()
+			if len(args) != 1 {
+				return nil, fmt.Errorf("expected 1 argument, got %d", len(args))
+			}
+			str, ok := args[0].(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string argument, got %T", args[0])
+			}
+			return f(str)
+		}
+
+	// func(string) float64
+	case func(string) float64:
+		return func(ctx *TransformContext, node *Node, args []interface{}, pass int) (val interface{}, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					err = wrapPanic(r, ctx, node.Rule, pass)
+				}
+			}()
+			if len(args) != 1 {
+				return nil, fmt.Errorf("expected 1 argument, got %d", len(args))
+			}
+			str, ok := args[0].(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string argument, got %T", args[0])
+			}
+			return f(str), nil
+		}
+
+	// func(string) int
+	case func(string) int:
+		return func(ctx *TransformContext, node *Node, args []interface{}, pass int) (val interface{}, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					err = wrapPanic(r, ctx, node.Rule, pass)
+				}
+			}()
+			if len(args) != 1 {
+				return nil, fmt.Errorf("expected 1 argument, got %d", len(args))
+			}
+			str, ok := args[0].(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string argument, got %T", args[0])
+			}
+			return f(str), nil
+		}
+
+	// func(float64, float64) float64 - e.g. arithmetic
+	case func(float64, float64) float64:
+		return func(ctx *TransformContext, node *Node, args []interface{}, pass int) (val interface{}, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					err = wrapPanic(r, ctx, node.Rule, pass)
+				}
+			}()
+			if len(args) != 2 {
+				return nil, fmt.Errorf("expected 2 arguments, got %d", len(args))
+			}
+			a, ok1 := args[0].(float64)
+			b, ok2 := args[1].(float64)
+			if !ok1 || !ok2 {
+				// Try to convert if types don't match (fallback to slower path inside wrapper)
+				// This handles cases where children might return different types
+				// But for pure float64 path, this is fast
+				return callTransformWithPass(fn, ctx, node, args, pass)
+			}
+			return f(a, b), nil
+		}
+
+	// func(...interface{}) string - e.g. Concat
+	case func(...interface{}) string:
+		return func(ctx *TransformContext, node *Node, args []interface{}, pass int) (val interface{}, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					err = wrapPanic(r, ctx, node.Rule, pass)
+				}
+			}()
+			return f(args...), nil
+		}
+
+	// func(...interface{}) interface{} - e.g. Identity, Flatten
+	case func(...interface{}) interface{}:
+		return func(ctx *TransformContext, node *Node, args []interface{}, pass int) (val interface{}, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					err = wrapPanic(r, ctx, node.Rule, pass)
+				}
+			}()
+			return f(args...), nil
+		}
+	}
+
+	// Fallback to reflection for unknown types
+	return func(ctx *TransformContext, node *Node, args []interface{}, pass int) (interface{}, error) {
+		return callTransformWithPass(fn, ctx, node, args, pass)
+	}
 }
