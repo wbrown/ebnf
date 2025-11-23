@@ -2,28 +2,32 @@ package parse
 
 import (
 	"fmt"
-	"github.com/wbrown/ebnf"
 	"regexp"
 	"strings"
+
+	"github.com/wbrown/ebnf"
 )
 
 // Parser uses an EBNF grammar to parse input text
 type Parser struct {
-	grammar *ebnf.Grammar
-	input   string
-	pos     int
-	line    int
-	col     int
-	Debug   bool // Enable debug output
-	depth   int  // Track recursion depth for debug indentation
+	grammar  *ebnf.Grammar
+	input    string
+	pos      int
+	line     int
+	col      int
+	Debug    bool            // Enable debug output
+	depth    int             // Track recursion depth for debug indentation
 	debugLog strings.Builder // Capture debug output
 
 	// Focused debugging
-	focusPos   int  // Position to focus on (-1 = disabled)
-	focusRange int  // Range around focus position
-	
+	focusPos   int // Position to focus on (-1 = disabled)
+	focusRange int // Range around focus position
+
 	// Regex cache to avoid recompiling the same patterns
 	regexCache map[string]*regexp.Regexp
+
+	// Expression rules that should be flattened (cached to avoid map allocation)
+	exprRules map[string]bool
 }
 
 // New creates a new parser with the given EBNF grammar
@@ -32,6 +36,19 @@ func New(grammar *ebnf.Grammar) *Parser {
 		grammar:    grammar,
 		focusPos:   -1,
 		regexCache: make(map[string]*regexp.Regexp),
+		exprRules: map[string]bool{
+			"or_expr":      true,
+			"and_expr":     true,
+			"eq_expr":      true,
+			"rel_expr":     true,
+			"concat_expr":  true,
+			"add_expr":     true,
+			"mult_expr":    true,
+			"fair_expr":    true,
+			"exp_expr":     true,
+			"unary_expr":   true,
+			"primary_expr": true,
+		},
 	}
 }
 
@@ -71,7 +88,7 @@ func (p *Parser) Parse(input string, startRule string) (*ParseTree, error) {
 	// Get the start rule from grammar
 	rule := p.grammar.GetRule(startRule)
 	if rule == nil {
-		return nil, fmt.Errorf("start rule %q not found in grammar", startRule)
+		return nil, newRuleNotFoundError(startRule)
 	}
 
 	// Initialize parser state - always reset for each parse
@@ -92,8 +109,13 @@ func (p *Parser) Parse(input string, startRule string) (*ParseTree, error) {
 		if len(remaining) > 20 {
 			remaining = remaining[:20] + "..."
 		}
-		return nil, fmt.Errorf("unexpected input at line %d, col %d (pos %d/%d): %q",
-			p.line, p.col, p.pos, len(p.input), remaining)
+		return nil, &ParseError{
+			Type:    ErrorExpectedEOF,
+			Pos:     p.pos,
+			Line:    p.line,
+			Col:     p.col,
+			Details: fmt.Sprintf("unexpected input at line %d, col %d (pos %d/%d): %q", p.line, p.col, p.pos, len(p.input), remaining),
+		}
 	}
 
 	return &ParseTree{Root: node, Input: input}, nil
@@ -103,7 +125,7 @@ func (p *Parser) Parse(input string, startRule string) (*ParseTree, error) {
 func (p *Parser) parseRule(ruleName string) (*Node, error) {
 	rule := p.grammar.GetRule(ruleName)
 	if rule == nil {
-		return nil, fmt.Errorf("rule %q not found", ruleName)
+		return nil, newRuleNotFoundError(ruleName)
 	}
 
 	// Save position for this rule
@@ -131,7 +153,7 @@ func (p *Parser) parseRule(ruleName string) (*Node, error) {
 	p.depth--
 	if err != nil {
 		p.debugf("Rule %s failed: %v", ruleName, err)
-		return nil, fmt.Errorf("error parsing rule %s: %w", ruleName, err)
+		return nil, wrapRuleError(ruleName, err)
 	}
 	p.debugf("Rule %s succeeded", ruleName)
 
@@ -163,26 +185,11 @@ func (p *Parser) parseRule(ruleName string) (*Node, error) {
 
 // shouldFlatten returns true if this rule should be flattened to its child
 func (p *Parser) shouldFlatten(ruleName string, children []*Node) bool {
-	// Expression rules that just pass through when they have a single non-terminal child
-	exprRules := map[string]bool{
-		"or_expr":     true,
-		"and_expr":    true,
-		"eq_expr":     true,
-		"rel_expr":     true,
-		"concat_expr": true,
-		"add_expr":    true,
-		"mult_expr":   true,
-		"fair_expr":   true,
-		"exp_expr":    true,
-		"unary_expr":  true,
-		"primary_expr": true,
-	}
-
 	// Only flatten if:
 	// 1. It's an expression rule
 	// 2. It has exactly one child
 	// 3. That child is a non-terminal (has a Rule name)
-	return exprRules[ruleName] && len(children) == 1 && children[0].Rule != ""
+	return p.exprRules[ruleName] && len(children) == 1 && children[0].Rule != ""
 }
 
 // parseExpression parses an EBNF expression and returns the resulting nodes
@@ -219,14 +226,14 @@ func (p *Parser) parseExpression(expr ebnf.Expression) ([]*Node, error) {
 	case *ebnf.PositiveLookahead:
 		return p.parsePositiveLookahead(e)
 	default:
-		return nil, fmt.Errorf("unknown expression type: %T", expr)
+		return nil, newUnknownExpressionError(fmt.Sprintf("%T", expr))
 	}
 }
 
 // parseCharClass matches a single character from a character class
 func (p *Parser) parseCharClass(cc *ebnf.CharClass) ([]*Node, error) {
 	if p.pos >= len(p.input) {
-		return nil, fmt.Errorf("unexpected EOF at line %d col %d, expected character from class", p.line, p.col)
+		return nil, newUnexpectedEOFError("character from class", p.line, p.col)
 	}
 
 	ch := rune(p.input[p.pos])
@@ -256,7 +263,7 @@ func (p *Parser) parseCharClass(cc *ebnf.CharClass) ([]*Node, error) {
 	}
 
 	if !matched {
-		return nil, fmt.Errorf("character %q at line %d col %d does not match character class", ch, p.line, p.col)
+		return nil, newCharClassMismatchError(string(ch), p.line, p.col)
 	}
 
 	// Create node
@@ -283,7 +290,7 @@ func (p *Parser) parseCharClass(cc *ebnf.CharClass) ([]*Node, error) {
 // parseTerminal matches a terminal string
 func (p *Parser) parseTerminal(term *ebnf.Terminal) ([]*Node, error) {
 	if p.pos >= len(p.input) {
-		return nil, fmt.Errorf("unexpected EOF at line %d col %d, expected %q", p.line, p.col, term.Value)
+		return nil, newUnexpectedEOFError(fmt.Sprintf("%q", term.Value), p.line, p.col)
 	}
 
 	// The terminal value from EBNF already has escape sequences properly interpreted
@@ -297,8 +304,7 @@ func (p *Parser) parseTerminal(term *ebnf.Terminal) ([]*Node, error) {
 		if len(preview) > 20 {
 			preview = preview[:20] + "..."
 		}
-		return nil, fmt.Errorf("expected %q at line %d col %d, got %q",
-			termValue, p.line, p.col, preview)
+		return nil, newExpectedTerminalError(termValue, preview, p.line, p.col)
 	}
 
 	// Create node for this terminal
@@ -331,7 +337,7 @@ func (p *Parser) parseTerminal(term *ebnf.Terminal) ([]*Node, error) {
 // parseRegex matches input against a regular expression pattern
 func (p *Parser) parseRegex(regex *ebnf.Regex) ([]*Node, error) {
 	if p.pos >= len(p.input) {
-		return nil, fmt.Errorf("unexpected EOF at line %d col %d, expected pattern %q", p.line, p.col, regex.Pattern)
+		return nil, newUnexpectedEOFError(fmt.Sprintf("pattern %q", regex.Pattern), p.line, p.col)
 	}
 
 	// Get or compile the regex (with caching)
@@ -342,7 +348,7 @@ func (p *Parser) parseRegex(regex *ebnf.Regex) ([]*Node, error) {
 		var err error
 		re, err = regexp.Compile(cacheKey)
 		if err != nil {
-			return nil, fmt.Errorf("invalid regex pattern %q: %v", regex.Pattern, err)
+			return nil, newInvalidRegexError(regex.Pattern, err)
 		}
 		// Cache the compiled regex
 		p.regexCache[cacheKey] = re
@@ -356,8 +362,7 @@ func (p *Parser) parseRegex(regex *ebnf.Regex) ([]*Node, error) {
 		if len(preview) > 20 {
 			preview = preview[:20] + "..."
 		}
-		return nil, fmt.Errorf("expected pattern %q at line %d col %d, got %q",
-			regex.Pattern, p.line, p.col, preview)
+		return nil, newRegexNoMatchError(regex.Pattern, preview, p.line, p.col)
 	}
 
 	// Extract the matched text
@@ -403,7 +408,7 @@ func (p *Parser) parsePredicate(pred *ebnf.Predicate) ([]*Node, error) {
 
 	if err == nil {
 		// If the expression matched, the negative lookahead fails
-		return nil, fmt.Errorf("negative lookahead failed at line %d col %d", p.line, p.col)
+		return nil, newNegativeLookaheadError(p.line, p.col)
 	}
 
 	// Expression didn't match, negative lookahead succeeds
@@ -423,7 +428,7 @@ func (p *Parser) parsePositiveLookahead(pos *ebnf.PositiveLookahead) ([]*Node, e
 
 	if err != nil {
 		// If the expression didn't match, the positive lookahead fails
-		return nil, fmt.Errorf("positive lookahead failed at line %d col %d: %v", p.line, p.col, err)
+		return nil, newPositiveLookaheadError(p.line, p.col, err)
 	}
 
 	// Expression matched, positive lookahead succeeds
@@ -434,7 +439,7 @@ func (p *Parser) parsePositiveLookahead(pos *ebnf.PositiveLookahead) ([]*Node, e
 func (p *Parser) parseNonTerminal(nt *ebnf.NonTerminal) ([]*Node, error) {
 	rule := p.grammar.GetRule(nt.Name)
 	if rule == nil {
-		return nil, fmt.Errorf("rule %q not found", nt.Name)
+		return nil, newRuleNotFoundError(nt.Name)
 	}
 
 	node, err := p.parseRule(nt.Name)
@@ -494,7 +499,6 @@ func (p *Parser) restorePosition(pos, line, col int) {
 // parseChoice tries each alternative until one succeeds
 func (p *Parser) parseChoice(choice *ebnf.Choice) ([]*Node, error) {
 	var lastErr error
-	var errors []error
 
 	// Save current position for backtracking
 	savedPos, savedLine, savedCol := p.savePosition()
@@ -517,18 +521,13 @@ func (p *Parser) parseChoice(choice *ebnf.Choice) ([]*Node, error) {
 		// Failed, restore position and try next
 		p.debugf("Alternative %d failed: %v", i+1, err)
 		lastErr = err
-		errors = append(errors, fmt.Errorf("alt[%d]: %w", i, err))
+		// Don't allocate error wrapping - just track the last error
 		p.restorePosition(savedPos, savedLine, savedCol)
 	}
 	p.depth--
 
-	// If we have multiple errors and they're all similar, just return the last one
-	if len(errors) > 3 {
-		return nil, fmt.Errorf("no alternative matched (tried %d): %w", len(errors), lastErr)
-	}
-
-	// Otherwise show all errors for debugging
-	return nil, fmt.Errorf("no alternative matched: %v", errors)
+	// Return error only after all alternatives fail
+	return nil, newNoAltMatchedError(len(choice.Alternatives), lastErr)
 }
 
 // parseOrderedChoice tries each alternative in order and returns the first that succeeds
@@ -552,7 +551,7 @@ func (p *Parser) parseOrderedChoice(choice *ebnf.OrderedChoice) ([]*Node, error)
 	}
 
 	// Return the last error (simpler for ordered choice)
-	return nil, fmt.Errorf("no ordered alternative matched: %w", lastErr)
+	return nil, newNoAltMatchedError(len(choice.Alternatives), lastErr)
 }
 
 // parseOptional tries to parse the expression, returns empty if it fails
@@ -662,7 +661,7 @@ func (p *Parser) parseConsolidatedRepetition(expr ebnf.Expression, requireOne bo
 	}
 
 	if requireOne && count == 0 {
-		return nil, fmt.Errorf("expected at least one occurrence")
+		return nil, newExpectedAtLeastOneError()
 	}
 
 	// Create a single consolidated value node from the matched text
@@ -712,7 +711,7 @@ func (p *Parser) parseOneOrMore(rep *ebnf.OneOrMore) ([]*Node, error) {
 
 	// Check minimum count
 	if count == 0 {
-		return nil, fmt.Errorf("expected at least one occurrence")
+		return nil, newExpectedAtLeastOneError()
 	}
 
 	return result, nil
