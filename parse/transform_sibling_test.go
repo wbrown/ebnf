@@ -203,9 +203,9 @@ func TestTransform_Sibling_Grouping(t *testing.T) {
 			// Check if this is the first elseif
 			isFirstElseif := ctx.PrevSibling() != nil && ctx.PrevSibling().Rule == "if"
 			return map[string]interface{}{
-				"type":        "elseif",
-				"cond":        cond,
-				"isFirst":     isFirstElseif,
+				"type":    "elseif",
+				"cond":    cond,
+				"isFirst": isFirstElseif,
 			}, nil
 		},
 		"else": func(ctx *TransformContext) (map[string]interface{}, error) {

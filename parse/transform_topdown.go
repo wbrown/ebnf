@@ -18,15 +18,16 @@ import (
 // allowing them to inspect the original structure before transformation.
 //
 // Example:
-//   transforms := TransformMap{
-//       "scope": func(ctx *TransformContext, children ...*Node) (*Scope, error) {
-//           // Process parent scope before children
-//           scope := &Scope{Name: ctx.Node.Rule}
-//           // Children will be transformed after this
-//           return scope, nil
-//       },
-//   }
-//   result, err := TransformTopDown(tree, transforms)
+//
+//	transforms := TransformMap{
+//	    "scope": func(ctx *TransformContext, children ...*Node) (*Scope, error) {
+//	        // Process parent scope before children
+//	        scope := &Scope{Name: ctx.Node.Rule}
+//	        // Children will be transformed after this
+//	        return scope, nil
+//	    },
+//	}
+//	result, err := TransformTopDown(tree, transforms)
 func TransformTopDown(tree *ParseTree, transforms TransformMap) (interface{}, error) {
 	if tree == nil || tree.Root == nil {
 		return nil, fmt.Errorf("cannot transform nil tree")
@@ -70,7 +71,7 @@ func transformNodeTopDown(node *Node, parent *Node, siblings []*Node, index int,
 		// Check function signature to see if it expects transformed children
 		fnType := reflect.TypeOf(fn)
 		numIn := fnType.NumIn()
-		
+
 		// Determine if function expects transformed values or raw nodes
 		expectsTransformedValues := false
 		if numIn > 0 {
@@ -166,4 +167,3 @@ func transformNodeTopDown(node *Node, parent *Node, siblings []*Node, index int,
 	}
 	return transformedChildren, nil
 }
-

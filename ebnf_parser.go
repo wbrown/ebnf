@@ -6,9 +6,9 @@ import (
 
 // Parser for EBNF grammars
 type Parser struct {
-	lexer    *Lexer
-	current  Token
-	peeked   *Token
+	lexer   *Lexer
+	current Token
+	peeked  *Token
 }
 
 func NewParser(input string) *Parser {
@@ -63,7 +63,7 @@ func (p *Parser) skipComments() error {
 
 func (p *Parser) expect(typ TokenType) error {
 	if p.current.Type != typ {
-		return fmt.Errorf("expected %v, got %v at line %d, col %d", 
+		return fmt.Errorf("expected %v, got %v at line %d, col %d",
 			typ, p.current.Type, p.current.Line, p.current.Col)
 	}
 	return p.advanceSkipComments()
@@ -75,12 +75,12 @@ func (p *Parser) ParseGrammar() (*Grammar, error) {
 	if err := p.advanceSkipComments(); err != nil {
 		return nil, err
 	}
-	
+
 	grammar := &Grammar{}
-	
+
 	for p.current.Type != TokenEOF {
 		// Comments are now automatically skipped
-		
+
 		rule, err := p.parseRule()
 		if err != nil {
 			return nil, err
@@ -89,7 +89,7 @@ func (p *Parser) ParseGrammar() (*Grammar, error) {
 			grammar.Rules = append(grammar.Rules, rule)
 		}
 	}
-	
+
 	return grammar, nil
 }
 
@@ -161,29 +161,29 @@ func (p *Parser) parseExpression() (Expression, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Check for unordered choice (|)
 	var alternatives []Expression
 	for p.current.Type == TokenPipe {
 		if alternatives == nil {
 			alternatives = []Expression{left}
 		}
-		
+
 		if err := p.advanceSkipComments(); err != nil {
 			return nil, err
 		}
-		
+
 		right, err := p.parseOrderedChoice()
 		if err != nil {
 			return nil, err
 		}
 		alternatives = append(alternatives, right)
 	}
-	
+
 	if alternatives != nil {
 		return &Choice{Alternatives: alternatives}, nil
 	}
-	
+
 	return left, nil
 }
 
@@ -193,53 +193,53 @@ func (p *Parser) parseOrderedChoice() (Expression, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Check for ordered choice (/)
 	var alternatives []Expression
 	for p.current.Type == TokenSlash {
 		if alternatives == nil {
 			alternatives = []Expression{left}
 		}
-		
+
 		if err := p.advanceSkipComments(); err != nil {
 			return nil, err
 		}
-		
+
 		right, err := p.parseSequence()
 		if err != nil {
 			return nil, err
 		}
 		alternatives = append(alternatives, right)
 	}
-	
+
 	if alternatives != nil {
 		return &OrderedChoice{Alternatives: alternatives}, nil
 	}
-	
+
 	return left, nil
 }
 
 // parseSequence parses a sequence of terms
 func (p *Parser) parseSequence() (Expression, error) {
 	var elements []Expression
-	
+
 	for {
 		// Check for end of sequence
 		switch p.current.Type {
 		case TokenPipe, TokenSlash, TokenRParen, TokenRBracket, TokenRAngle, TokenSemi, TokenEOF:
 			goto done
 		}
-		
+
 		term, err := p.parseTerm()
 		if err != nil {
 			return nil, err
 		}
-		
+
 		if term != nil {
 			elements = append(elements, term)
 		}
 	}
-	
+
 done:
 	if len(elements) == 0 {
 		return &Empty{}, nil
@@ -256,7 +256,7 @@ func (p *Parser) parseTerm() (Expression, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Check for suffixes
 	switch p.current.Type {
 	case TokenStar:
@@ -275,7 +275,7 @@ func (p *Parser) parseTerm() (Expression, error) {
 		}
 		return &Optional{Expr: base}, nil
 	}
-	
+
 	return base, nil
 }
 
@@ -288,28 +288,28 @@ func (p *Parser) parseFactor() (Expression, error) {
 			return nil, err
 		}
 		return &NonTerminal{Name: name}, nil
-		
+
 	case TokenString:
 		value := p.current.Value
 		if err := p.advanceSkipComments(); err != nil {
 			return nil, err
 		}
 		return &Terminal{Value: value}, nil
-		
+
 	case TokenChar:
 		value := p.current.Value
 		if err := p.advanceSkipComments(); err != nil {
 			return nil, err
 		}
 		return &Terminal{Value: value}, nil
-		
+
 	case TokenRegex:
 		pattern := p.current.Value
 		if err := p.advanceSkipComments(); err != nil {
 			return nil, err
 		}
 		return &Regex{Pattern: pattern}, nil
-		
+
 	case TokenLParen:
 		if err := p.advanceSkipComments(); err != nil {
 			return nil, err
@@ -322,10 +322,10 @@ func (p *Parser) parseFactor() (Expression, error) {
 			return nil, err
 		}
 		return &Group{Expr: expr}, nil
-		
+
 	case TokenLBracket:
 		return p.parseCharClass()
-		
+
 	case TokenLBrace:
 		// {expr} means zero or more repetitions of expr
 		if err := p.advanceSkipComments(); err != nil {
@@ -340,23 +340,23 @@ func (p *Parser) parseFactor() (Expression, error) {
 			return nil, err
 		}
 		return &Repetition{Expr: expr}, nil
-		
+
 	case TokenLAngle:
 		// Hidden expression
 		if err := p.advanceSkipComments(); err != nil {
 			return nil, err
 		}
-		
+
 		// Parse any expression inside < >
 		expr, err := p.parseExpression()
 		if err != nil {
 			return nil, err
 		}
-		
+
 		if err := p.expect(TokenRAngle); err != nil {
 			return nil, err
 		}
-		
+
 		// Special handling for terminals, regex, non-terminals, and character classes to mark them as hidden
 		switch e := expr.(type) {
 		case *Terminal:
@@ -375,7 +375,7 @@ func (p *Parser) parseFactor() (Expression, error) {
 			// For other expressions, wrap in Hidden node
 			return &Hidden{Expr: expr}, nil
 		}
-		
+
 	case TokenExclam:
 		// Negative lookahead
 		if err := p.advanceSkipComments(); err != nil {
@@ -386,7 +386,7 @@ func (p *Parser) parseFactor() (Expression, error) {
 			return nil, err
 		}
 		return &Predicate{Expr: expr}, nil
-		
+
 	case TokenAmpersand:
 		// Positive lookahead
 		if err := p.advanceSkipComments(); err != nil {
@@ -397,13 +397,12 @@ func (p *Parser) parseFactor() (Expression, error) {
 			return nil, err
 		}
 		return &PositiveLookahead{Expr: expr}, nil
-		
+
 	default:
-		return nil, fmt.Errorf("unexpected token %v at line %d, col %d", 
+		return nil, fmt.Errorf("unexpected token %v at line %d, col %d",
 			p.current.Type, p.current.Line, p.current.Col)
 	}
 }
-
 
 // ParseFile parses an EBNF grammar from a file
 func ParseFile(filename string) (*Grammar, error) {

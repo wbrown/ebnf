@@ -5,19 +5,20 @@ package parse
 // to attach metadata (source positions, debugging info, etc.) to transformed values.
 //
 // Example:
-//   transforms := TransformMap{
-//       "number": func(node *Node, s string) *TransformResult {
-//           val, _ := strconv.Atoi(s)
-//           return &TransformResult{
-//               Value: val,
-//               Metadata: map[string]interface{}{
-//                   "source_pos": node.Start,
-//                   "line": node.Line,
-//               },
-//               Node: node,
-//           }
-//       },
-//   }
+//
+//	transforms := TransformMap{
+//	    "number": func(node *Node, s string) *TransformResult {
+//	        val, _ := strconv.Atoi(s)
+//	        return &TransformResult{
+//	            Value: val,
+//	            Metadata: map[string]interface{}{
+//	                "source_pos": node.Start,
+//	                "line": node.Line,
+//	            },
+//	            Node: node,
+//	        }
+//	    },
+//	}
 type TransformResult struct {
 	Value    interface{}            // The transformed value
 	Metadata map[string]interface{} // Optional metadata (source positions, types, etc.)
@@ -70,4 +71,3 @@ func (tr *TransformResult) HasMetadata(key string) bool {
 	_, ok := tr.Metadata[key]
 	return ok
 }
-

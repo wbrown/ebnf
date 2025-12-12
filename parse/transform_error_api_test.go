@@ -39,7 +39,7 @@ func TestTransformError_API_ConvenienceMethods(t *testing.T) {
 func TestTransformError_API_HelperFunctions(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
+			Rule:  "number",
 			Value: "invalid",
 		},
 		Input: "invalid",
@@ -83,12 +83,12 @@ func TestTransformError_API_HelperFunctions(t *testing.T) {
 func TestTransformError_API_UsageExample(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
-			Value: "invalid",
-			Line: 5,
+			Rule:   "number",
+			Value:  "invalid",
+			Line:   5,
 			Column: 10,
-			Start: 20,
-			End: 27,
+			Start:  20,
+			End:    27,
 		},
 		Input: "some text with invalid number here",
 	}
@@ -128,4 +128,3 @@ func TestTransformError_API_UsageExample(t *testing.T) {
 		}
 	}
 }
-

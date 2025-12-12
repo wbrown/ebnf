@@ -9,25 +9,25 @@ import (
 type TransformError struct {
 	// Original error from transform function
 	Err error
-	
+
 	// Node information
 	Rule   string // Grammar rule name
 	Line   int    // Source line number
 	Column int    // Source column number
 	Start  int    // Start position in input
 	End    int    // End position in input
-	
+
 	// Source text information
-	Input     string // Original input text (for extracting snippets)
+	Input         string // Original input text (for extracting snippets)
 	SourceSnippet string // Extracted source text snippet (computed on demand)
-	
+
 	// Transform context
 	TransformRule string // Name of transform function (usually same as Rule)
 	PassNumber    int    // Pass number for multi-pass (0 = single pass)
-	
+
 	// Context path (parent chain for debugging)
 	ContextPath []string // Path from root to this node
-	
+
 	// Panic information (if error came from panic)
 	PanicValue interface{}
 	PanicStack []byte
@@ -36,31 +36,31 @@ type TransformError struct {
 // Error returns a formatted error message including rule name, position, and source snippet.
 func (e *TransformError) Error() string {
 	msg := fmt.Sprintf("transform error in rule %q", e.Rule)
-	
+
 	if e.TransformRule != "" && e.TransformRule != e.Rule {
 		msg += fmt.Sprintf(" (transform: %q)", e.TransformRule)
 	}
-	
+
 	if e.Line > 0 {
 		msg += fmt.Sprintf(" at line %d, column %d", e.Line, e.Column)
 	}
-	
+
 	if e.PassNumber > 0 {
 		msg += fmt.Sprintf(" (pass %d)", e.PassNumber)
 	}
-	
+
 	// Include source snippet if available
 	snippet := e.getSourceSnippet()
 	if snippet != "" {
 		msg += fmt.Sprintf("\n  source: %q", snippet)
 	}
-	
+
 	if e.Err != nil {
 		msg += "\n  error: " + e.Err.Error()
 	} else if e.PanicValue != nil {
 		msg += fmt.Sprintf("\n  panic: %v", e.PanicValue)
 	}
-	
+
 	return msg
 }
 
@@ -95,28 +95,28 @@ func (e *TransformError) IsPanic() bool {
 // FormatError creates a formatted error message with full context
 func (e *TransformError) FormatError() string {
 	var buf string
-	
+
 	if len(e.ContextPath) > 0 {
 		buf += fmt.Sprintf("Context: %v\n", e.ContextPath)
 	}
-	
+
 	buf += fmt.Sprintf("Rule: %q\n", e.Rule)
-	
+
 	if e.Line > 0 {
-		buf += fmt.Sprintf("Position: line %d, column %d (offset %d-%d)\n", 
+		buf += fmt.Sprintf("Position: line %d, column %d (offset %d-%d)\n",
 			e.Line, e.Column, e.Start, e.End)
 	}
-	
+
 	if e.PassNumber > 0 {
 		buf += fmt.Sprintf("Pass: %d\n", e.PassNumber)
 	}
-	
+
 	// Include source snippet with highlighting
 	snippet := e.getSourceSnippet()
 	if snippet != "" {
 		buf += fmt.Sprintf("Source:\n%s\n", snippet)
 	}
-	
+
 	if e.Err != nil {
 		buf += fmt.Sprintf("Error: %v\n", e.Err)
 	} else if e.PanicValue != nil {
@@ -125,7 +125,7 @@ func (e *TransformError) FormatError() string {
 			buf += fmt.Sprintf("Stack:\n%s\n", string(e.PanicStack))
 		}
 	}
-	
+
 	return buf
 }
 
@@ -245,10 +245,10 @@ func (e *TransformError) getSourceSnippet() string {
 // wrapTransformError wraps an error with transform context
 func wrapTransformError(err error, ctx *TransformContext, ruleName string, passNumber int) *TransformError {
 	te := &TransformError{
-		Err:          err,
-		Rule:         ruleName,
+		Err:           err,
+		Rule:          ruleName,
 		TransformRule: ruleName,
-		PassNumber:   passNumber,
+		PassNumber:    passNumber,
 	}
 
 	if ctx != nil {
@@ -274,11 +274,11 @@ func wrapTransformError(err error, ctx *TransformContext, ruleName string, passN
 // wrapPanic wraps a panic value with transform context
 func wrapPanic(panicValue interface{}, ctx *TransformContext, ruleName string, passNumber int) *TransformError {
 	te := &TransformError{
-		PanicValue:   panicValue,
-		PanicStack:   debug.Stack(),
-		Rule:         ruleName,
+		PanicValue:    panicValue,
+		PanicStack:    debug.Stack(),
+		Rule:          ruleName,
 		TransformRule: ruleName,
-		PassNumber:   passNumber,
+		PassNumber:    passNumber,
 	}
 
 	if ctx != nil {
@@ -336,4 +336,3 @@ func GetTransformError(err error) *TransformError {
 	}
 	panic("error is not a TransformError")
 }
-

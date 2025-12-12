@@ -148,4 +148,3 @@ func TestTransform_TopDown_ParentBeforeChildren(t *testing.T) {
 		t.Errorf("Expected parent first, got %q", processingOrder[0])
 	}
 }
-

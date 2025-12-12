@@ -28,13 +28,13 @@ rule2 = 'b' ;`,
 			wantErr: false,
 		},
 		{
-			name: "comment_in_sequence",
-			input: `rule = 'a' (* first *) 'b' (* second *) 'c' ;`,
+			name:    "comment_in_sequence",
+			input:   `rule = 'a' (* first *) 'b' (* second *) 'c' ;`,
 			wantErr: false,
 		},
 		{
-			name: "comment_after_terminal",
-			input: `rule = 'test' (* a test *) ;`,
+			name:    "comment_after_terminal",
+			input:   `rule = 'test' (* a test *) ;`,
 			wantErr: false,
 		},
 		{
@@ -48,38 +48,38 @@ rule2 = 'b' ;`,
 			wantErr: false,
 		},
 		{
-			name: "comment_in_nested_groups",
-			input: `rule = [ ( 'a' (* inner comment *) ) | (* outer comment *) 'b' ] ;`,
+			name:    "comment_in_nested_groups",
+			input:   `rule = [ ( 'a' (* inner comment *) ) | (* outer comment *) 'b' ] ;`,
 			wantErr: false,
 		},
 		{
-			name: "comment_after_hidden_terminal",
-			input: `rule = <'hidden'> (* after hidden *) 'visible' ;`,
+			name:    "comment_after_hidden_terminal",
+			input:   `rule = <'hidden'> (* after hidden *) 'visible' ;`,
 			wantErr: false,
 		},
 		{
-			name: "comment_in_repetition",
-			input: `rule = ( 'item' (* each item *) )* ;`,
+			name:    "comment_in_repetition",
+			input:   `rule = ( 'item' (* each item *) )* ;`,
 			wantErr: false,
 		},
 		{
-			name: "comment_in_optional",
-			input: `rule = ( 'optional' (* maybe *) )? ;`,
+			name:    "comment_in_optional",
+			input:   `rule = ( 'optional' (* maybe *) )? ;`,
 			wantErr: false,
 		},
 		{
-			name: "comment_with_parentheses_in_brackets",
-			input: `rule = [ ( 'grouped' ) | (* comment forces choice interpretation *) 'ungrouped' ] ;`,
+			name:    "comment_with_parentheses_in_brackets",
+			input:   `rule = [ ( 'grouped' ) | (* comment forces choice interpretation *) 'ungrouped' ] ;`,
 			wantErr: false,
 		},
 		{
-			name: "comment_between_choice_alternatives",
-			input: `rule = 'a' | (* between *) 'b' | (* choices *) 'c' ;`,
+			name:    "comment_between_choice_alternatives",
+			input:   `rule = 'a' | (* between *) 'b' | (* choices *) 'c' ;`,
 			wantErr: false,
 		},
 		{
-			name: "comment_in_char_class_makes_it_choice",
-			input: `rule = [ a (* this makes it a choice, not char class *) | b ] ;`,
+			name:    "comment_in_char_class_makes_it_choice",
+			input:   `rule = [ a (* this makes it a choice, not char class *) | b ] ;`,
 			wantErr: false,
 		},
 		{
@@ -110,7 +110,7 @@ terminal2 = 'y' ;`,
 				t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			// Verify we actually parsed rules
 			if !tt.wantErr && grammar != nil {
 				if len(grammar.Rules) == 0 {
@@ -128,22 +128,22 @@ func TestCommentEdgeCases(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "unclosed_comment",
-			input: `rule = 'a' (* unclosed comment ;`,
+			name:    "unclosed_comment",
+			input:   `rule = 'a' (* unclosed comment ;`,
 			wantErr: true,
 		},
 		{
-			name: "nested_comments_not_supported",
-			input: `rule = 'a' (* outer (* inner *) comment *) ;`,
+			name:    "nested_comments_not_supported",
+			input:   `rule = 'a' (* outer (* inner *) comment *) ;`,
 			wantErr: true, // Standard Pascal comments don't support nesting
 		},
 		{
-			name: "comment_at_eof",
-			input: `rule = 'a' ; (* final comment`,
+			name:    "comment_at_eof",
+			input:   `rule = 'a' ; (* final comment`,
 			wantErr: true, // Unclosed comment at EOF
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := ParseString(tt.input)

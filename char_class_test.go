@@ -144,7 +144,7 @@ func TestCharacterClassParsing(t *testing.T) {
 				t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if !tt.wantErr && tt.checkResult != nil {
 				tt.checkResult(t, grammar)
 			}
@@ -173,21 +173,21 @@ func TestCharacterClassTokenization(t *testing.T) {
 			values: []string{"[", "^", "a", "-", "z", "]"},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			lexer := NewLexer(tt.input)
-			
+
 			for i, expectedType := range tt.tokens {
 				tok, err := lexer.NextToken()
 				if err != nil {
 					t.Fatalf("Unexpected error at token %d: %v", i, err)
 				}
-				
+
 				if tok.Type != expectedType {
 					t.Errorf("Token %d: expected type %v, got %v", i, expectedType, tok.Type)
 				}
-				
+
 				if i < len(tt.values) && tok.Value != tt.values[i] {
 					t.Errorf("Token %d: expected value %q, got %q", i, tt.values[i], tok.Value)
 				}

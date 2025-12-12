@@ -19,8 +19,8 @@ type Expression interface {
 
 // Terminal represents a literal string or character
 type Terminal struct {
-	Value    string
-	Hidden   bool // true if wrapped in < >
+	Value  string
+	Hidden bool // true if wrapped in < >
 }
 
 // NonTerminal represents a reference to another rule
@@ -105,15 +105,15 @@ type Regex struct {
 // Implement exprNode() for all expression types
 func (Terminal) exprNode()          {}
 func (NonTerminal) exprNode()       {}
-func (Sequence) exprNode()           {}
-func (Choice) exprNode()             {}
-func (OrderedChoice) exprNode()      {}
-func (Optional) exprNode()           {}
-func (Repetition) exprNode()         {}
-func (OneOrMore) exprNode()          {}
-func (Group) exprNode()              {}
-func (Predicate) exprNode()          {}
-func (PositiveLookahead) exprNode()  {}
-func (CharClass) exprNode()          {}
-func (Empty) exprNode()              {}
-func (Regex) exprNode()              {}
+func (Sequence) exprNode()          {}
+func (Choice) exprNode()            {}
+func (OrderedChoice) exprNode()     {}
+func (Optional) exprNode()          {}
+func (Repetition) exprNode()        {}
+func (OneOrMore) exprNode()         {}
+func (Group) exprNode()             {}
+func (Predicate) exprNode()         {}
+func (PositiveLookahead) exprNode() {}
+func (CharClass) exprNode()         {}
+func (Empty) exprNode()             {}
+func (Regex) exprNode()             {}

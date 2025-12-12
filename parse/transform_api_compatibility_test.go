@@ -106,4 +106,3 @@ func TestTransform_API_BackwardCompatibility(t *testing.T) {
 		t.Errorf("Expected 5.0, got %v", result)
 	}
 }
-

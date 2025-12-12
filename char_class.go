@@ -10,11 +10,11 @@ import (
 func (p *Parser) parseCharClass() (Expression, error) {
 	startPos := p.current.Line
 	startCol := p.current.Col
-	
+
 	if err := p.advanceSkipComments(); err != nil { // skip [
 		return nil, err
 	}
-	
+
 	// Peek ahead to determine if this is a character class or a choice
 	// Character classes contain:
 	// - Single characters: [abc]
@@ -25,11 +25,11 @@ func (p *Parser) parseCharClass() (Expression, error) {
 	// - Identifiers
 	// - Quoted strings
 	// - Complex expressions
-	
+
 	if p.current.Type == TokenEOF {
 		return nil, fmt.Errorf("unexpected EOF in bracket expression at line %d, col %d", startPos, startCol)
 	}
-	
+
 	// Check for negation
 	negated := false
 	if p.current.Type == TokenCaret {
@@ -38,36 +38,36 @@ func (p *Parser) parseCharClass() (Expression, error) {
 			return nil, err
 		}
 	}
-	
+
 	// Try to parse as character class first
 	chars := []rune{}
 	ranges := []CharRange{}
-	
+
 	for p.current.Type != TokenRBracket && p.current.Type != TokenEOF {
 		// In a character class, we expect:
 		// - Single quoted characters
 		// - Identifiers (for single char identifiers)
 		// - Escaped sequences
-		
+
 		if p.current.Type == TokenChar {
 			// Single character
 			if len(p.current.Value) != 1 {
 				// Multi-char string, this is a choice not a char class
 				return p.parseChoiceFromBracket(startPos, startCol)
 			}
-			
+
 			char := rune(p.current.Value[0])
 			if err := p.advanceSkipComments(); err != nil {
 				return nil, err
 			}
-			
+
 			// Check for range
 			if p.current.Type == TokenMinus {
 				if err := p.advanceSkipComments(); err != nil {
 					return nil, err
 				}
 				if p.current.Type != TokenChar || len(p.current.Value) != 1 {
-					return nil, fmt.Errorf("invalid character range at line %d, col %d", 
+					return nil, fmt.Errorf("invalid character range at line %d, col %d",
 						p.current.Line, p.current.Col)
 				}
 				endChar := rune(p.current.Value[0])
@@ -85,14 +85,14 @@ func (p *Parser) parseCharClass() (Expression, error) {
 				if err := p.advanceSkipComments(); err != nil {
 					return nil, err
 				}
-				
+
 				// Check for range
 				if p.current.Type == TokenMinus {
 					if err := p.advanceSkipComments(); err != nil {
 						return nil, err
 					}
 					if (p.current.Type != TokenChar && p.current.Type != TokenIdent) || len(p.current.Value) != 1 {
-						return nil, fmt.Errorf("invalid character range at line %d, col %d", 
+						return nil, fmt.Errorf("invalid character range at line %d, col %d",
 							p.current.Line, p.current.Col)
 					}
 					endChar := rune(p.current.Value[0])
@@ -128,11 +128,11 @@ func (p *Parser) parseCharClass() (Expression, error) {
 				p.current.Type, p.current.Line, p.current.Col)
 		}
 	}
-	
+
 	if err := p.expect(TokenRBracket); err != nil {
 		return nil, err
 	}
-	
+
 	return &CharClass{
 		Chars:   chars,
 		Ranges:  ranges,
@@ -141,11 +141,11 @@ func (p *Parser) parseCharClass() (Expression, error) {
 }
 
 // parseChoiceFromBracket continues parsing a bracketed expression as a choice
-// We've already consumed the '[' 
+// We've already consumed the '['
 func (p *Parser) parseChoiceFromBracket(startLine, startCol int) (Expression, error) {
 	// We need to reset and re-parse as a choice
 	// For now, we'll parse it similar to how we parse regular choices
-	
+
 	var alternatives []Expression
 	for p.current.Type != TokenRBracket && p.current.Type != TokenEOF {
 		expr, err := p.parseExpression()
@@ -153,7 +153,7 @@ func (p *Parser) parseChoiceFromBracket(startLine, startCol int) (Expression, er
 			return nil, err
 		}
 		alternatives = append(alternatives, expr)
-		
+
 		if p.current.Type == TokenPipe {
 			if err := p.advanceSkipComments(); err != nil {
 				return nil, err
@@ -164,11 +164,11 @@ func (p *Parser) parseChoiceFromBracket(startLine, startCol int) (Expression, er
 				p.current.Line, p.current.Col)
 		}
 	}
-	
+
 	if err := p.expect(TokenRBracket); err != nil {
 		return nil, err
 	}
-	
+
 	if len(alternatives) == 0 {
 		return &Empty{}, nil
 	}
@@ -181,15 +181,15 @@ func (p *Parser) parseChoiceFromBracket(startLine, startCol int) (Expression, er
 // String representation for debugging
 func (c *CharClass) String() string {
 	var parts []string
-	
+
 	for _, ch := range c.Chars {
 		parts = append(parts, fmt.Sprintf("%c", ch))
 	}
-	
+
 	for _, r := range c.Ranges {
 		parts = append(parts, fmt.Sprintf("%c-%c", r.From, r.To))
 	}
-	
+
 	result := "[" + strings.Join(parts, "") + "]"
 	if c.Negated {
 		result = "[^" + result[1:]

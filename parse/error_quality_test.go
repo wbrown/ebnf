@@ -19,10 +19,10 @@ number = #"[0-9]+" ;
 	}
 
 	tests := []struct {
-		name           string
-		input          string
-		expectedInErr  []string // Substrings that should appear in error
-		shouldHavePos  bool     // Should include position info
+		name          string
+		input         string
+		expectedInErr []string // Substrings that should appear in error
+		shouldHavePos bool     // Should include position info
 	}{
 		{
 			name:          "unexpected token",
@@ -34,7 +34,7 @@ number = #"[0-9]+" ;
 			name:          "unexpected EOF in terminal",
 			input:         "hel",
 			expectedInErr: []string{"no alternative matched"},
-			shouldHavePos: false,  // The choice error doesn't have position, but wrapped error does
+			shouldHavePos: false, // The choice error doesn't have position, but wrapped error does
 		},
 		{
 			name:          "invalid pattern",
@@ -125,23 +125,23 @@ func TestParseErrorTypes(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "terminal mismatch",
-			err:  newExpectedTerminalError("foo", "bar", 1, 5),
+			name:     "terminal mismatch",
+			err:      newExpectedTerminalError("foo", "bar", 1, 5),
 			expected: `expected "foo"`,
 		},
 		{
-			name: "unexpected EOF",
-			err:  newUnexpectedEOFError("something", 2, 10),
+			name:     "unexpected EOF",
+			err:      newUnexpectedEOFError("something", 2, 10),
 			expected: "unexpected EOF",
 		},
 		{
-			name: "rule not found",
-			err:  newRuleNotFoundError("missing_rule"),
+			name:     "rule not found",
+			err:      newRuleNotFoundError("missing_rule"),
 			expected: `rule "missing_rule" not found`,
 		},
 		{
-			name: "no alternatives matched",
-			err:  newNoAltMatchedError(3, nil),
+			name:     "no alternatives matched",
+			err:      newNoAltMatchedError(3, nil),
 			expected: "no alternative matched",
 		},
 	}
@@ -155,4 +155,3 @@ func TestParseErrorTypes(t *testing.T) {
 		})
 	}
 }
-

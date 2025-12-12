@@ -42,12 +42,12 @@ func TestTransform_ErrorHandling_ErrorPropagation(t *testing.T) {
 func TestTransform_ErrorHandling_Position(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
-			Value: "invalid",
-			Line: 5,
+			Rule:   "number",
+			Value:  "invalid",
+			Line:   5,
 			Column: 10,
-			Start: 42,
-			End: 49,
+			Start:  42,
+			End:    49,
 		},
 		Input: "some text with invalid number here",
 	}
@@ -83,9 +83,9 @@ func TestTransform_ErrorHandling_Position(t *testing.T) {
 func TestTransform_ErrorHandling_PanicRecovery(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
-			Value: "42",
-			Line: 1,
+			Rule:   "number",
+			Value:  "42",
+			Line:   1,
 			Column: 1,
 		},
 		Input: "42",
@@ -118,7 +118,7 @@ func TestTransform_ErrorHandling_PanicRecovery(t *testing.T) {
 func TestTransform_ErrorHandling_MultiPass(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
+			Rule:  "number",
 			Value: "invalid",
 		},
 		Input: "invalid",
@@ -187,7 +187,7 @@ func TestTransform_ErrorHandling_NestedErrors(t *testing.T) {
 func TestTransform_ErrorHandling_Unwrap(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
+			Rule:  "number",
 			Value: "invalid",
 		},
 		Input: "invalid",
@@ -218,12 +218,12 @@ func TestTransform_ErrorHandling_Unwrap(t *testing.T) {
 func TestTransform_ErrorHandling_FormattedOutput(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
-			Value: "invalid",
-			Line: 5,
+			Rule:   "number",
+			Value:  "invalid",
+			Line:   5,
 			Column: 10,
-			Start: 42,
-			End: 49,
+			Start:  42,
+			End:    49,
 		},
 		Input: "some text with invalid number here",
 	}
@@ -256,7 +256,7 @@ func TestTransform_ErrorHandling_FormattedOutput(t *testing.T) {
 func TestTransform_ErrorHandling_HelperFunctions(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
+			Rule:  "number",
 			Value: "invalid",
 		},
 		Input: "invalid",
@@ -285,4 +285,3 @@ func TestTransform_ErrorHandling_HelperFunctions(t *testing.T) {
 		t.Errorf("Expected rule 'number', got %q", te.Rule)
 	}
 }
-

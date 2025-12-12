@@ -9,12 +9,12 @@ import (
 func TestTransformError_Demo(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
-			Value: "invalid_number",
-			Line: 5,
+			Rule:   "number",
+			Value:  "invalid_number",
+			Line:   5,
 			Column: 10,
-			Start: 42,
-			End: 57,
+			Start:  42,
+			End:    57,
 		},
 		Input: "some text before invalid_number and some text after",
 	}
@@ -42,4 +42,3 @@ func TestTransformError_Demo(t *testing.T) {
 		fmt.Printf("\nFormatted error:\n%s\n", te.FormatError())
 	}
 }
-

@@ -16,16 +16,17 @@ import (
 // explicit transforms to persist across passes.
 //
 // Example:
-//   pass1 := TransformMap{
-//       "if_chain": func(ctx *TransformContext, ...) (*Conditional, error) {
-//           // Group if/elseif/else chains
-//       },
-//   }
-//   pass2 := TransformMap{
-//       "number": func(node *Node, s string) float64 { ... },
-//       "add": func(a, b float64) float64 { return a + b },
-//   }
-//   result, err := TransformMultiPass(tree, []TransformMap{pass1, pass2})
+//
+//	pass1 := TransformMap{
+//	    "if_chain": func(ctx *TransformContext, ...) (*Conditional, error) {
+//	        // Group if/elseif/else chains
+//	    },
+//	}
+//	pass2 := TransformMap{
+//	    "number": func(node *Node, s string) float64 { ... },
+//	    "add": func(a, b float64) float64 { return a + b },
+//	}
+//	result, err := TransformMultiPass(tree, []TransformMap{pass1, pass2})
 func TransformMultiPass(tree *ParseTree, passes []TransformMap) (interface{}, error) {
 	if tree == nil || tree.Root == nil {
 		return nil, fmt.Errorf("cannot transform nil tree")
@@ -93,9 +94,9 @@ func TransformMultiPass(tree *ParseTree, passes []TransformMap) (interface{}, er
 func valueToTree(value interface{}, input string) *ParseTree {
 	// Create a synthetic node to hold the value
 	node := &Node{
-		Rule:            "_transformed",
-		TransformedValue: value, // Store the actual typed value
-		Value:          fmt.Sprintf("%v", value), // String representation
+		Rule:             "_transformed",
+		TransformedValue: value,                    // Store the actual typed value
+		Value:            fmt.Sprintf("%v", value), // String representation
 	}
 
 	return &ParseTree{
@@ -103,4 +104,3 @@ func valueToTree(value interface{}, input string) *ParseTree {
 		Input: input,
 	}
 }
-

@@ -96,7 +96,7 @@ func TestTransform_MultiPass_Grouping(t *testing.T) {
 func TestTransform_MultiPass_TypePreservation(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
+			Rule:  "number",
 			Value: "42",
 		},
 		Input: "42",
@@ -191,4 +191,3 @@ func TestTransform_MultiPass_ThreePasses(t *testing.T) {
 		t.Errorf("Expected '5.0', got %v (result: %v)", resultStr, result)
 	}
 }
-
