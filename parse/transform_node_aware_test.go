@@ -50,19 +50,19 @@ func TestTransform_NodeAware_BackwardCompatible(t *testing.T) {
 func TestTransform_NodeAware_PositionAccess(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "expr",
-			Line: 1,
+			Rule:   "expr",
+			Line:   1,
 			Column: 1,
-			Start: 0,
-			End: 5,
+			Start:  0,
+			End:    5,
 			Children: []*Node{
 				{
-					Rule: "number",
-					Value: "42",
-					Line: 1,
+					Rule:   "number",
+					Value:  "42",
+					Line:   1,
 					Column: 1,
-					Start: 0,
-					End: 2,
+					Start:  0,
+					End:    2,
 				},
 			},
 		},
@@ -105,11 +105,11 @@ func TestTransform_NodeAware_SourceTextExtraction(t *testing.T) {
 	input := "x != y"
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "eq_expr",
-			Line: 1,
+			Rule:   "eq_expr",
+			Line:   1,
 			Column: 1,
-			Start: 0,
-			End: 6,
+			Start:  0,
+			End:    6,
 			Children: []*Node{
 				{Rule: "variable", Value: "x", Start: 0, End: 1},
 				{Rule: "variable", Value: "y", Start: 5, End: 6},
@@ -155,34 +155,34 @@ func TestTransform_NodeAware_IndentationDetection(t *testing.T) {
 			Rule: "list",
 			Children: []*Node{
 				{
-					Rule: "item",
+					Rule:  "item",
 					Value: "Item 1",
-					Line: 1,
+					Line:  1,
 					Start: 2,
-					End: 8,
+					End:   8,
 					Children: []*Node{
 						{
-							Rule: "item",
+							Rule:  "item",
 							Value: "Nested 1.1",
-							Line: 2,
+							Line:  2,
 							Start: 13,
-							End: 24,
+							End:   24,
 						},
 						{
-							Rule: "item",
+							Rule:  "item",
 							Value: "Nested 1.2",
-							Line: 3,
+							Line:  3,
 							Start: 27,
-							End: 38,
+							End:   38,
 						},
 					},
 				},
 				{
-					Rule: "item",
+					Rule:  "item",
 					Value: "Item 2",
-					Line: 4,
+					Line:  4,
 					Start: 40,
-					End: 46,
+					End:   46,
 				},
 			},
 		},
@@ -301,12 +301,12 @@ func TestTransform_NodeAware_MixedSignatures(t *testing.T) {
 func TestTransform_NodeAware_TerminalNode(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
-			Value: "123",
-			Line: 1,
+			Rule:   "number",
+			Value:  "123",
+			Line:   1,
 			Column: 1,
-			Start: 0,
-			End: 3,
+			Start:  0,
+			End:    3,
 		},
 		Input: "123",
 	}
@@ -336,4 +336,3 @@ func TestTransform_NodeAware_TerminalNode(t *testing.T) {
 		t.Errorf("Expected line 1, got %d", num.Line)
 	}
 }
-

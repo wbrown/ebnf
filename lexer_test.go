@@ -40,17 +40,17 @@ func TestLexerEscapeSequences(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			lexer := NewLexer(tt.input)
-			
+
 			for i, expected := range tt.expected {
 				tok, err := lexer.NextToken()
 				if err != nil {
 					t.Fatalf("Token %d: unexpected error: %v", i, err)
 				}
-				
+
 				if tok.Type != expected.Type {
 					t.Errorf("Token %d: expected type %v, got %v", i, expected.Type, tok.Type)
 				}
@@ -58,7 +58,7 @@ func TestLexerEscapeSequences(t *testing.T) {
 					t.Errorf("Token %d: expected value %q, got %q", i, expected.Value, tok.Value)
 				}
 			}
-			
+
 			// Check for EOF
 			tok, err := lexer.NextToken()
 			if err != nil {
@@ -104,17 +104,17 @@ func TestLexerAmpersand(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			lexer := NewLexer(tt.input)
-			
+
 			for i, expected := range tt.expected {
 				tok, err := lexer.NextToken()
 				if err != nil {
 					t.Fatalf("Token %d: unexpected error: %v", i, err)
 				}
-				
+
 				if tok.Type != expected.Type {
 					t.Errorf("Token %d: expected type %v, got %v", i, expected.Type, tok.Type)
 				}
@@ -122,7 +122,7 @@ func TestLexerAmpersand(t *testing.T) {
 					t.Errorf("Token %d: expected value %q, got %q", i, expected.Value, tok.Value)
 				}
 			}
-			
+
 			// Check for EOF
 			tok, err := lexer.NextToken()
 			if err != nil {
@@ -189,17 +189,17 @@ func TestLexerAlternativeRuleSeparators(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			lexer := NewLexer(tt.input)
-			
+
 			for i, expected := range tt.expected {
 				tok, err := lexer.NextToken()
 				if err != nil {
 					t.Fatalf("Token %d: unexpected error: %v", i, err)
 				}
-				
+
 				if tok.Type != expected.Type {
 					t.Errorf("Token %d: expected type %v, got %v", i, expected.Type, tok.Type)
 				}
@@ -207,7 +207,7 @@ func TestLexerAlternativeRuleSeparators(t *testing.T) {
 					t.Errorf("Token %d: expected value %q, got %q", i, expected.Value, tok.Value)
 				}
 			}
-			
+
 			// Check for EOF
 			tok, err := lexer.NextToken()
 			if err != nil {
@@ -257,17 +257,17 @@ func TestLexerCurlyBraces(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			lexer := NewLexer(tt.input)
-			
+
 			for i, expected := range tt.expected {
 				tok, err := lexer.NextToken()
 				if err != nil {
 					t.Fatalf("Token %d: unexpected error: %v", i, err)
 				}
-				
+
 				if tok.Type != expected.Type {
 					t.Errorf("Token %d: expected type %v, got %v", i, expected.Type, tok.Type)
 				}
@@ -275,7 +275,7 @@ func TestLexerCurlyBraces(t *testing.T) {
 					t.Errorf("Token %d: expected value %q, got %q", i, expected.Value, tok.Value)
 				}
 			}
-			
+
 			// Check for EOF
 			tok, err := lexer.NextToken()
 			if err != nil {

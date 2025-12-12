@@ -8,10 +8,10 @@ import (
 func TestTransformError_SourceSnippet_Basic(t *testing.T) {
 	input := "This is a test with an error here"
 	te := &TransformError{
-		Input: input,
-		Start: 20,
-		End:   25,
-		Line:  1,
+		Input:  input,
+		Start:  20,
+		End:    25,
+		Line:   1,
 		Column: 21,
 	}
 
@@ -29,15 +29,15 @@ func TestTransformError_SourceSnippet_Basic(t *testing.T) {
 func TestTransformError_SourceSnippet_Context(t *testing.T) {
 	input := "This is a test with an error here in the middle of the text"
 	te := &TransformError{
-		Input: input,
-		Start: 20,
-		End:   25,
-		Line:  1,
+		Input:  input,
+		Start:  20,
+		End:    25,
+		Line:   1,
 		Column: 21,
 	}
 
 	snippet := te.GetSourceSnippet()
-	
+
 	// Should include context before and after
 	if !strings.Contains(snippet, "test") || !strings.Contains(snippet, "here") {
 		t.Errorf("Snippet should include context, got: %q", snippet)
@@ -48,15 +48,15 @@ func TestTransformError_SourceSnippet_LongInput(t *testing.T) {
 	// Create a long input
 	input := strings.Repeat("a", 200) + "ERROR" + strings.Repeat("b", 200)
 	te := &TransformError{
-		Input: input,
-		Start: 200,
-		End:   205,
-		Line:  1,
+		Input:  input,
+		Start:  200,
+		End:    205,
+		Line:   1,
 		Column: 201,
 	}
 
 	snippet := te.GetSourceSnippet()
-	
+
 	// Should be truncated but still show the error
 	if len(snippet) > 200 {
 		t.Errorf("Snippet should be truncated, got length %d", len(snippet))
@@ -68,13 +68,13 @@ func TestTransformError_SourceSnippet_LongInput(t *testing.T) {
 
 func TestTransformError_SourceSnippet_InvalidBounds(t *testing.T) {
 	input := "test"
-	
+
 	// Test with invalid bounds
 	te := &TransformError{
-		Input: input,
-		Start: -1,
-		End:   10,
-		Line:  1,
+		Input:  input,
+		Start:  -1,
+		End:    10,
+		Line:   1,
 		Column: 1,
 	}
 
@@ -95,4 +95,3 @@ func TestTransformError_SourceSnippet_EmptyInput(t *testing.T) {
 		t.Errorf("Expected empty snippet for empty input, got: %q", snippet)
 	}
 }
-

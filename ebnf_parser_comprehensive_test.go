@@ -84,7 +84,7 @@ goto_scene_tail = <ws>+ label_ref [ goto_scene_args | null ] ;
 			},
 		},
 		{
-			name: "complex expression with predicates", 
+			name: "complex expression with predicates",
 			input: `
 text_chunk = plain_char+ ;
 plain_char = letter | digit | <' '> | <'!'> | <'"'> | <'#'> | <'%'> | <'&'> | <"'"> 
@@ -109,7 +109,7 @@ plain_char = letter | digit | <' '> | <'!'> | <'"'> | <'#'> | <'%'> | <'&'> | <"
 				if len(choice.Alternatives) < 20 {
 					return fmt.Errorf("expected many alternatives, got %d", len(choice.Alternatives))
 				}
-				
+
 				// Debug: print what we actually got
 				fmt.Printf("DEBUG: plain_char has %d alternatives\n", len(choice.Alternatives))
 				for i, alt := range choice.Alternatives {
@@ -155,7 +155,7 @@ achievement = <'achievement'> <ws>+ achievement_name <ws>+ visibility <ws>+ poin
 			wantErr: false, // Should parse fine - multi-line is OK and [ ] is just a choice
 			validate: func(g *Grammar) error {
 				if len(g.Rules) != 1 {
-					return fmt.Errorf("expected 1 rule, got %d", len(g.Rules)) 
+					return fmt.Errorf("expected 1 rule, got %d", len(g.Rules))
 				}
 				// Should be a long sequence
 				seq, ok := g.Rules[0].Expression.(*Sequence)
@@ -196,7 +196,7 @@ not_equals = <'!='> ;
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g, err := ParseString(tt.input)
@@ -225,7 +225,7 @@ func TestEscapeSequences(t *testing.T) {
 		{`rule = '` + "\\" + `'' ;`, "'"},
 		{`rule = '` + "\\" + `"' ;`, "\""},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			g, err := ParseString(tt.input)
@@ -300,7 +300,7 @@ func TestParserEdgeCases(t *testing.T) {
 			wantErr: false, // Middle empty is valid
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := ParseString(tt.input)

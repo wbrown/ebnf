@@ -34,8 +34,8 @@ const (
 	TokenComma
 	TokenCaret
 	TokenMinus
-	TokenRegex  // New token type for regex literals #"..."
-	TokenSlash  // New token type for ordered choice /
+	TokenRegex     // New token type for regex literals #"..."
+	TokenSlash     // New token type for ordered choice /
 	TokenAmpersand // New token type for positive lookahead &
 )
 
@@ -90,7 +90,7 @@ func (l *Lexer) skipWhitespace() {
 
 func (l *Lexer) readIdent() string {
 	start := l.pos
-	for l.pos < len(l.input) && (unicode.IsLetter(rune(l.current())) || 
+	for l.pos < len(l.input) && (unicode.IsLetter(rune(l.current())) ||
 		unicode.IsDigit(rune(l.current())) || l.current() == '_') {
 		l.advance()
 	}
@@ -100,7 +100,7 @@ func (l *Lexer) readIdent() string {
 func (l *Lexer) readString(quote byte) (string, error) {
 	l.advance() // skip opening quote
 	var result strings.Builder
-	
+
 	for l.pos < len(l.input) && l.current() != quote {
 		if l.current() == '\\' {
 			l.advance()
@@ -129,12 +129,12 @@ func (l *Lexer) readString(quote byte) (string, error) {
 		}
 		l.advance()
 	}
-	
+
 	if l.current() != quote {
 		return "", fmt.Errorf("unterminated string")
 	}
 	l.advance() // skip closing quote
-	
+
 	return result.String(), nil
 }
 
@@ -142,7 +142,7 @@ func (l *Lexer) readComment() (string, error) {
 	startLine, startCol := l.line, l.col
 	l.advance() // skip (
 	l.advance() // skip *
-	
+
 	var result strings.Builder
 	for l.pos < len(l.input) {
 		if l.pos < len(l.input)-1 && l.current() == '*' && l.input[l.pos+1] == ')' {
@@ -153,7 +153,7 @@ func (l *Lexer) readComment() (string, error) {
 		result.WriteByte(l.current())
 		l.advance()
 	}
-	
+
 	// Reached end of input without closing comment
 	return "", fmt.Errorf("unterminated comment starting at line %d, col %d", startLine, startCol)
 }
@@ -162,9 +162,9 @@ func (l *Lexer) readRegex() (string, error) {
 	startLine, startCol := l.line, l.col
 	l.advance() // skip #
 	l.advance() // skip "
-	
+
 	var result strings.Builder
-	
+
 	for l.pos < len(l.input) && l.current() != '"' {
 		if l.current() == '\\' {
 			l.advance()
@@ -179,24 +179,24 @@ func (l *Lexer) readRegex() (string, error) {
 		}
 		l.advance()
 	}
-	
+
 	if l.current() != '"' {
 		return "", fmt.Errorf("unterminated regex starting at line %d, col %d", startLine, startCol)
 	}
 	l.advance() // skip closing "
-	
+
 	return result.String(), nil
 }
 
 func (l *Lexer) NextToken() (Token, error) {
 	l.skipWhitespace()
-	
+
 	if l.pos >= len(l.input) {
 		return Token{Type: TokenEOF}, nil
 	}
-	
+
 	line, col := l.line, l.col
-	
+
 	// Check for three-character tokens first
 	if l.pos < len(l.input)-2 {
 		threeChar := l.input[l.pos : l.pos+3]
@@ -207,7 +207,7 @@ func (l *Lexer) NextToken() (Token, error) {
 			return Token{Type: TokenEquals, Value: "::=", Line: line, Col: col}, nil
 		}
 	}
-	
+
 	// Check for two-character tokens
 	if l.pos < len(l.input)-1 {
 		twoChar := l.input[l.pos : l.pos+2]
@@ -234,7 +234,7 @@ func (l *Lexer) NextToken() (Token, error) {
 			return Token{Type: TokenRegex, Value: regex, Line: line, Col: col}, nil
 		}
 	}
-	
+
 	// Single character tokens
 	switch l.current() {
 	case '=':
@@ -313,19 +313,19 @@ func (l *Lexer) NextToken() (Token, error) {
 		}
 		return Token{Type: TokenString, Value: str, Line: line, Col: col}, nil
 	}
-	
+
 	// Identifier or single character (including digits for character classes)
 	if unicode.IsLetter(rune(l.current())) || l.current() == '_' {
 		ident := l.readIdent()
 		return Token{Type: TokenIdent, Value: ident, Line: line, Col: col}, nil
 	}
-	
+
 	// Single digit (for character classes like [0-9])
 	if unicode.IsDigit(rune(l.current())) {
 		digit := string(l.current())
 		l.advance()
 		return Token{Type: TokenIdent, Value: digit, Line: line, Col: col}, nil
 	}
-	
+
 	return Token{}, fmt.Errorf("unexpected character: %c at line %d, col %d", l.current(), line, col)
 }

@@ -233,7 +233,7 @@ func TestInstaparseFeatures(t *testing.T) {
 				// All rules should parse successfully
 				rules := []string{"rule1", "rule2", "rule3", "rule4"}
 				values := []string{"one", "two", "three", "four"}
-				
+
 				for i, ruleName := range rules {
 					rule := g.GetRule(ruleName)
 					if rule == nil {
@@ -263,14 +263,14 @@ func TestInstaparseFeatures(t *testing.T) {
 				if rule1 == nil || rule2 == nil {
 					t.Fatal("rules not found")
 				}
-				
+
 				// Both should be Repetition
 				rep1, ok1 := rule1.Expression.(*Repetition)
 				rep2, ok2 := rule2.Expression.(*Repetition)
 				if !ok1 || !ok2 {
 					t.Fatalf("expected Repetition, got %T and %T", rule1.Expression, rule2.Expression)
 				}
-				
+
 				// Both should repeat NonTerminal "item"
 				nt1, ok1 := rep1.Expr.(*NonTerminal)
 				nt2, ok2 := rep2.Expr.(*NonTerminal)
@@ -293,7 +293,7 @@ func TestInstaparseFeatures(t *testing.T) {
 				if rule == nil {
 					t.Fatal("rule not found")
 				}
-				
+
 				seq, ok := rule.Expression.(*Sequence)
 				if !ok {
 					t.Fatalf("expected Sequence, got %T", rule.Expression)
@@ -301,13 +301,13 @@ func TestInstaparseFeatures(t *testing.T) {
 				if len(seq.Elements) != 3 {
 					t.Fatalf("expected 3 elements, got %d", len(seq.Elements))
 				}
-				
+
 				// Middle element should be Repetition
 				rep, ok := seq.Elements[1].(*Repetition)
 				if !ok {
 					t.Fatalf("expected Repetition at position 1, got %T", seq.Elements[1])
 				}
-				
+
 				// Should repeat NonTerminal "middle"
 				nt, ok := rep.Expr.(*NonTerminal)
 				if !ok || nt.Name != "middle" {
@@ -335,7 +335,7 @@ func TestInstaparseFeatures(t *testing.T) {
 func TestSlashTokenLexing(t *testing.T) {
 	input := `rule = a / b | c ;`
 	lexer := NewLexer(input)
-	
+
 	expectedTokens := []struct {
 		typ   TokenType
 		value string
@@ -350,7 +350,7 @@ func TestSlashTokenLexing(t *testing.T) {
 		{TokenSemi, ";"},
 		{TokenEOF, ""},
 	}
-	
+
 	for i, expected := range expectedTokens {
 		tok, err := lexer.NextToken()
 		if err != nil {

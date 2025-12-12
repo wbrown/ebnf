@@ -232,12 +232,12 @@ func TestTransform_Context_StateStorage(t *testing.T) {
 func TestTransform_Context_CombinedSignature(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
-			Value: "42",
-			Line: 1,
+			Rule:   "number",
+			Value:  "42",
+			Line:   1,
 			Column: 1,
-			Start: 0,
-			End: 2,
+			Start:  0,
+			End:    2,
 		},
 		Input: "42",
 	}
@@ -268,4 +268,3 @@ func TestTransform_Context_CombinedSignature(t *testing.T) {
 		t.Errorf("Expected line 1, got %v", data["line"])
 	}
 }
-

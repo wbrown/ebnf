@@ -13,10 +13,10 @@ import (
 
 func main() {
 	var (
-		rule   = flag.String("rule", "", "Show details for a specific rule")
-		list   = flag.Bool("list", false, "List all rules")
-		stats  = flag.Bool("stats", false, "Show grammar statistics")
-		deps   = flag.Bool("deps", false, "Show rule dependencies")
+		rule  = flag.String("rule", "", "Show details for a specific rule")
+		list  = flag.Bool("list", false, "List all rules")
+		stats = flag.Bool("stats", false, "Show grammar statistics")
+		deps  = flag.Bool("deps", false, "Show rule dependencies")
 	)
 
 	flag.Usage = func() {

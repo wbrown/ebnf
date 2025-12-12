@@ -8,12 +8,12 @@ import (
 func TestTransform_Metadata_Basic(t *testing.T) {
 	tree := &ParseTree{
 		Root: &Node{
-			Rule: "number",
-			Value: "42",
-			Line: 1,
+			Rule:   "number",
+			Value:  "42",
+			Line:   1,
 			Column: 1,
-			Start: 0,
-			End: 2,
+			Start:  0,
+			End:    2,
 		},
 		Input: "42",
 	}
@@ -161,4 +161,3 @@ func TestTransform_Metadata_HelperMethods(t *testing.T) {
 		t.Errorf("Expected 10, got %d", column)
 	}
 }
-

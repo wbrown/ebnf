@@ -50,12 +50,12 @@ func TestHiddenExpressions(t *testing.T) {
 				t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if !tt.wantErr && grammar == nil {
 				t.Error("Expected grammar but got nil")
 				return
 			}
-			
+
 			// Check that the expression is properly wrapped in Hidden
 			if !tt.wantErr {
 				rule := grammar.Rules[0]
