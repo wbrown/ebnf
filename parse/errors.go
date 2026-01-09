@@ -48,6 +48,9 @@ func (e *ParseError) Error() string {
 			e.Expected, e.Line, e.Col, e.Got)
 
 	case ErrorExpectedEOF:
+		if e.Details != "" {
+			return fmt.Sprintf("expected EOF at line %d col %d: %s", e.Line, e.Col, e.Details)
+		}
 		return fmt.Sprintf("expected EOF at line %d col %d", e.Line, e.Col)
 
 	case ErrorUnexpectedEOF:
