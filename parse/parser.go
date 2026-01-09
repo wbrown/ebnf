@@ -28,6 +28,13 @@ type Parser struct {
 
 	// Expression rules that should be flattened (cached to avoid map allocation)
 	exprRules map[string]bool
+
+	// Track furthest position reached for better error messages
+	furthestPos   int    // Furthest position where parsing was attempted
+	furthestLine  int    // Line at furthest position
+	furthestCol   int    // Column at furthest position
+	furthestError error  // Error at furthest position
+	furthestRule  string // Rule being attempted at furthest position
 }
 
 // New creates a new parser with the given EBNF grammar
@@ -97,6 +104,13 @@ func (p *Parser) Parse(input string, startRule string) (*ParseTree, error) {
 	p.line = 1
 	p.col = 1
 
+	// Reset furthest position tracking
+	p.furthestPos = 0
+	p.furthestLine = 1
+	p.furthestCol = 1
+	p.furthestError = nil
+	p.furthestRule = ""
+
 	// Parse starting from the rule
 	node, err := p.parseRule(startRule)
 	if err != nil {
@@ -109,16 +123,40 @@ func (p *Parser) Parse(input string, startRule string) (*ParseTree, error) {
 		if len(remaining) > 20 {
 			remaining = remaining[:20] + "..."
 		}
+
+		// Build detailed error message including furthest position info
+		details := fmt.Sprintf("unexpected input at line %d, col %d (pos %d/%d): %q", p.line, p.col, p.pos, len(p.input), remaining)
+
+		// If we have info about why parsing stopped further ahead, include it
+		if p.furthestPos > p.pos && p.furthestError != nil {
+			details += fmt.Sprintf("\n  furthest parse attempt at line %d, col %d (pos %d) in rule %q: %v",
+				p.furthestLine, p.furthestCol, p.furthestPos, p.furthestRule, p.furthestError)
+		} else if p.furthestError != nil && p.furthestRule != "" {
+			details += fmt.Sprintf("\n  last failed rule %q at line %d: %v",
+				p.furthestRule, p.furthestLine, p.furthestError)
+		}
+
 		return nil, &ParseError{
 			Type:    ErrorExpectedEOF,
 			Pos:     p.pos,
 			Line:    p.line,
 			Col:     p.col,
-			Details: fmt.Sprintf("unexpected input at line %d, col %d (pos %d/%d): %q", p.line, p.col, p.pos, len(p.input), remaining),
+			Details: details,
 		}
 	}
 
 	return &ParseTree{Root: node, Input: input}, nil
+}
+
+// recordFurthestError records an error if it's at or past the furthest position seen
+func (p *Parser) recordFurthestError(ruleName string, err error) {
+	if p.pos >= p.furthestPos {
+		p.furthestPos = p.pos
+		p.furthestLine = p.line
+		p.furthestCol = p.col
+		p.furthestError = err
+		p.furthestRule = ruleName
+	}
 }
 
 // parseRule parses input according to a named rule
@@ -153,6 +191,7 @@ func (p *Parser) parseRule(ruleName string) (*Node, error) {
 	p.depth--
 	if err != nil {
 		p.debugf("Rule %s failed: %v", ruleName, err)
+		p.recordFurthestError(ruleName, err)
 		return nil, wrapRuleError(ruleName, err)
 	}
 	p.debugf("Rule %s succeeded", ruleName)
