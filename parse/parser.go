@@ -28,11 +28,34 @@ type Parser struct {
 
 	// Expression rules that should be flattened (cached to avoid map allocation)
 	exprRules map[string]bool
+
+	// Track furthest position reached for better error messages
+	furthestPos   int    // Furthest position where parsing was attempted
+	furthestLine  int    // Line at furthest position
+	furthestCol   int    // Column at furthest position
+	furthestError error  // Error at furthest position
+	furthestRule  string // Rule being attempted at furthest position
+
+	// Case-insensitive matching (global default)
+	caseInsensitive bool
+}
+
+// Option is a function that configures a Parser
+type Option func(*Parser)
+
+// WithCaseInsensitive sets the global default for case-insensitive matching.
+// By default, terminals are case-sensitive. When set to true, all terminals
+// will match case-insensitively using strings.EqualFold (faster than regex).
+// Per-terminal 'i' suffix (e.g., 'hello'i) can be used for selective case-insensitivity.
+func WithCaseInsensitive(ci bool) Option {
+	return func(p *Parser) {
+		p.caseInsensitive = ci
+	}
 }
 
 // New creates a new parser with the given EBNF grammar
-func New(grammar *ebnf.Grammar) *Parser {
-	return &Parser{
+func New(grammar *ebnf.Grammar, opts ...Option) *Parser {
+	p := &Parser{
 		grammar:    grammar,
 		focusPos:   -1,
 		regexCache: make(map[string]*regexp.Regexp),
@@ -50,6 +73,10 @@ func New(grammar *ebnf.Grammar) *Parser {
 			"primary_expr": true,
 		},
 	}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p
 }
 
 // SetFocusedDebug enables detailed debugging around a specific position
@@ -97,6 +124,13 @@ func (p *Parser) Parse(input string, startRule string) (*ParseTree, error) {
 	p.line = 1
 	p.col = 1
 
+	// Reset furthest position tracking
+	p.furthestPos = 0
+	p.furthestLine = 1
+	p.furthestCol = 1
+	p.furthestError = nil
+	p.furthestRule = ""
+
 	// Parse starting from the rule
 	node, err := p.parseRule(startRule)
 	if err != nil {
@@ -109,16 +143,40 @@ func (p *Parser) Parse(input string, startRule string) (*ParseTree, error) {
 		if len(remaining) > 20 {
 			remaining = remaining[:20] + "..."
 		}
+
+		// Build detailed error message including furthest position info
+		details := fmt.Sprintf("unexpected input at line %d, col %d (pos %d/%d): %q", p.line, p.col, p.pos, len(p.input), remaining)
+
+		// If we have info about why parsing stopped further ahead, include it
+		if p.furthestPos > p.pos && p.furthestError != nil {
+			details += fmt.Sprintf("\n  furthest parse attempt at line %d, col %d (pos %d) in rule %q: %v",
+				p.furthestLine, p.furthestCol, p.furthestPos, p.furthestRule, p.furthestError)
+		} else if p.furthestError != nil && p.furthestRule != "" {
+			details += fmt.Sprintf("\n  last failed rule %q at line %d: %v",
+				p.furthestRule, p.furthestLine, p.furthestError)
+		}
+
 		return nil, &ParseError{
 			Type:    ErrorExpectedEOF,
 			Pos:     p.pos,
 			Line:    p.line,
 			Col:     p.col,
-			Details: fmt.Sprintf("unexpected input at line %d, col %d (pos %d/%d): %q", p.line, p.col, p.pos, len(p.input), remaining),
+			Details: details,
 		}
 	}
 
 	return &ParseTree{Root: node, Input: input}, nil
+}
+
+// recordFurthestError records an error if it's at or past the furthest position seen
+func (p *Parser) recordFurthestError(ruleName string, err error) {
+	if p.pos >= p.furthestPos {
+		p.furthestPos = p.pos
+		p.furthestLine = p.line
+		p.furthestCol = p.col
+		p.furthestError = err
+		p.furthestRule = ruleName
+	}
 }
 
 // parseRule parses input according to a named rule
@@ -153,6 +211,7 @@ func (p *Parser) parseRule(ruleName string) (*Node, error) {
 	p.depth--
 	if err != nil {
 		p.debugf("Rule %s failed: %v", ruleName, err)
+		p.recordFurthestError(ruleName, err)
 		return nil, wrapRuleError(ruleName, err)
 	}
 	p.debugf("Rule %s succeeded", ruleName)
@@ -297,8 +356,23 @@ func (p *Parser) parseTerminal(term *ebnf.Terminal) ([]*Node, error) {
 	// (e.g., "\n" is already a newline character, not the two chars '\' and 'n')
 	termValue := term.Value
 
+	// Determine if case-insensitive matching should be used
+	// Per-terminal 'i' suffix takes precedence, otherwise use global setting
+	caseInsensitive := term.CaseInsensitive || p.caseInsensitive
+
 	// Check if the terminal matches at current position
-	if !strings.HasPrefix(p.input[p.pos:], termValue) {
+	var matched bool
+	if caseInsensitive {
+		// Case-insensitive matching using EqualFold (faster than regex)
+		if len(p.input)-p.pos >= len(termValue) {
+			matched = strings.EqualFold(p.input[p.pos:p.pos+len(termValue)], termValue)
+		}
+	} else {
+		// Case-sensitive matching
+		matched = strings.HasPrefix(p.input[p.pos:], termValue)
+	}
+
+	if !matched {
 		// For better error messages, show what we got
 		preview := p.input[p.pos:]
 		if len(preview) > 20 {
@@ -307,9 +381,12 @@ func (p *Parser) parseTerminal(term *ebnf.Terminal) ([]*Node, error) {
 		return nil, newExpectedTerminalError(termValue, preview, p.line, p.col)
 	}
 
+	// Get the actual matched text from input (preserves original case)
+	matchedValue := p.input[p.pos : p.pos+len(termValue)]
+
 	// Create node for this terminal
 	node := &Node{
-		Value:  termValue,
+		Value:  matchedValue,
 		Line:   p.line,
 		Column: p.col,
 		Start:  p.pos,

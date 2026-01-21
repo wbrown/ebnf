@@ -15,6 +15,8 @@ const (
 	TokenIdent
 	TokenString
 	TokenChar
+	TokenStringCI // Case-insensitive string "..."i
+	TokenCharCI   // Case-insensitive char '...'i
 	TokenComment
 	TokenEquals
 	TokenPipe
@@ -305,11 +307,21 @@ func (l *Lexer) NextToken() (Token, error) {
 		if err != nil {
 			return Token{}, err
 		}
+		// Check for case-insensitive suffix 'i'
+		if l.pos < len(l.input) && l.current() == 'i' {
+			l.advance()
+			return Token{Type: TokenCharCI, Value: str, Line: line, Col: col}, nil
+		}
 		return Token{Type: TokenChar, Value: str, Line: line, Col: col}, nil
 	case '"':
 		str, err := l.readString('"')
 		if err != nil {
 			return Token{}, err
+		}
+		// Check for case-insensitive suffix 'i'
+		if l.pos < len(l.input) && l.current() == 'i' {
+			l.advance()
+			return Token{Type: TokenStringCI, Value: str, Line: line, Col: col}, nil
 		}
 		return Token{Type: TokenString, Value: str, Line: line, Col: col}, nil
 	}

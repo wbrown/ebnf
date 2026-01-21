@@ -303,6 +303,20 @@ func (p *Parser) parseFactor() (Expression, error) {
 		}
 		return &Terminal{Value: value}, nil
 
+	case TokenStringCI:
+		value := p.current.Value
+		if err := p.advanceSkipComments(); err != nil {
+			return nil, err
+		}
+		return &Terminal{Value: value, CaseInsensitive: true}, nil
+
+	case TokenCharCI:
+		value := p.current.Value
+		if err := p.advanceSkipComments(); err != nil {
+			return nil, err
+		}
+		return &Terminal{Value: value, CaseInsensitive: true}, nil
+
 	case TokenRegex:
 		pattern := p.current.Value
 		if err := p.advanceSkipComments(); err != nil {

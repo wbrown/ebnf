@@ -19,8 +19,9 @@ type Expression interface {
 
 // Terminal represents a literal string or character
 type Terminal struct {
-	Value  string
-	Hidden bool // true if wrapped in < >
+	Value           string
+	Hidden          bool // true if wrapped in < >
+	CaseInsensitive bool // true for case-insensitive matching ('x'i or "x"i)
 }
 
 // NonTerminal represents a reference to another rule

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Case-insensitive literal matching**: Per-terminal `'SELECT'i` suffix and global `parse.WithCaseInsensitive(true)` option. Uses `strings.EqualFold()` for ~60% faster matching than regex `(?i)` patterns.
 - **Multiple transform function signatures**: Transform functions can now optionally receive `*Node` and/or `*TransformContext` parameters for access to source positions, parent nodes, and siblings. Old-style functions continue to work unchanged.
 - **Multi-pass transformations**: New `TransformMultiPass()` function enables sequential transformation passes with automatic structure preservation between passes.
 - **Top-down transformations**: New `TransformTopDown()` function processes parent nodes before children, useful for scoping and symbol tables.

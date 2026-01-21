@@ -6,9 +6,10 @@ A production-ready EBNF parser and transformation framework for Go. Parse text w
 
 - **Powerful Tree Transformation**: Multi-pass, top-down, context-aware transforms with rich error handling
 - **Standard EBNF**: Terminals, non-terminals, sequences, choices, repetition (`*`, `+`), optionals (`?`)
-- **Modern Extensions**: 
+- **Modern Extensions**:
   - Regex patterns: Instaparse-style `#"regex"` for complex patterns
   - Character classes: `[a-z]`, `[0-9]`, `[^abc]` with negation support
+  - Case-insensitive literals: `'SELECT'i` matches "select", "SELECT", "SeLeCt"
   - PEG features: Ordered choice (`/`), lookahead (`!`, `&`)
   - Comments: C-style `(* comment *)`
   - Multiple assignment operators: `=`, `:=`, `::=`, `<-`
@@ -311,6 +312,10 @@ not_quote = [^"] ;
 (* Regex patterns *)
 identifier = #"[a-zA-Z_][a-zA-Z0-9_]*" ;
 
+(* Case-insensitive literals *)
+keyword = 'SELECT'i ;             (* Matches select, SELECT, SeLeCt *)
+sql = "FROM"i table ;
+
 (* Repetition *)
 zero_or_more = element* ;
 one_or_more = element+ ;
@@ -434,6 +439,25 @@ tree, err := parser.Parse(input, "start_rule")
 // Print parse tree
 parse.PrintAST(os.Stdout, tree)          // Full tree
 parse.CompactPrintAST(os.Stdout, tree)   // Compact format
+```
+
+### Parser Options
+
+```go
+// Terminals are case-sensitive by default.
+// Use WithCaseInsensitive(true) for global case-insensitive matching,
+// or use the 'i' suffix on individual terminals: 'SELECT'i
+parser := parse.New(grammar, parse.WithCaseInsensitive(true))
+```
+
+Per-terminal case-insensitivity uses the `i` suffix in the grammar:
+
+```ebnf
+(* Only keywords are case-insensitive, identifiers are case-sensitive *)
+query = 'SELECT'i column 'FROM'i table ;
+column = identifier ;
+table = identifier ;
+identifier = #"[a-zA-Z_]+" ;
 ```
 
 ### Transforming
