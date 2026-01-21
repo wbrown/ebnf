@@ -35,11 +35,27 @@ type Parser struct {
 	furthestCol   int    // Column at furthest position
 	furthestError error  // Error at furthest position
 	furthestRule  string // Rule being attempted at furthest position
+
+	// Case-insensitive matching (global default)
+	caseInsensitive bool
+}
+
+// Option is a function that configures a Parser
+type Option func(*Parser)
+
+// WithCaseInsensitive sets the global default for case-insensitive matching.
+// By default, terminals are case-sensitive. When set to true, all terminals
+// will match case-insensitively using strings.EqualFold (faster than regex).
+// Per-terminal 'i' suffix (e.g., 'hello'i) can be used for selective case-insensitivity.
+func WithCaseInsensitive(ci bool) Option {
+	return func(p *Parser) {
+		p.caseInsensitive = ci
+	}
 }
 
 // New creates a new parser with the given EBNF grammar
-func New(grammar *ebnf.Grammar) *Parser {
-	return &Parser{
+func New(grammar *ebnf.Grammar, opts ...Option) *Parser {
+	p := &Parser{
 		grammar:    grammar,
 		focusPos:   -1,
 		regexCache: make(map[string]*regexp.Regexp),
@@ -57,6 +73,10 @@ func New(grammar *ebnf.Grammar) *Parser {
 			"primary_expr": true,
 		},
 	}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p
 }
 
 // SetFocusedDebug enables detailed debugging around a specific position
@@ -336,8 +356,23 @@ func (p *Parser) parseTerminal(term *ebnf.Terminal) ([]*Node, error) {
 	// (e.g., "\n" is already a newline character, not the two chars '\' and 'n')
 	termValue := term.Value
 
+	// Determine if case-insensitive matching should be used
+	// Per-terminal 'i' suffix takes precedence, otherwise use global setting
+	caseInsensitive := term.CaseInsensitive || p.caseInsensitive
+
 	// Check if the terminal matches at current position
-	if !strings.HasPrefix(p.input[p.pos:], termValue) {
+	var matched bool
+	if caseInsensitive {
+		// Case-insensitive matching using EqualFold (faster than regex)
+		if len(p.input)-p.pos >= len(termValue) {
+			matched = strings.EqualFold(p.input[p.pos:p.pos+len(termValue)], termValue)
+		}
+	} else {
+		// Case-sensitive matching
+		matched = strings.HasPrefix(p.input[p.pos:], termValue)
+	}
+
+	if !matched {
 		// For better error messages, show what we got
 		preview := p.input[p.pos:]
 		if len(preview) > 20 {
@@ -346,9 +381,12 @@ func (p *Parser) parseTerminal(term *ebnf.Terminal) ([]*Node, error) {
 		return nil, newExpectedTerminalError(termValue, preview, p.line, p.col)
 	}
 
+	// Get the actual matched text from input (preserves original case)
+	matchedValue := p.input[p.pos : p.pos+len(termValue)]
+
 	// Create node for this terminal
 	node := &Node{
-		Value:  termValue,
+		Value:  matchedValue,
 		Line:   p.line,
 		Column: p.col,
 		Start:  p.pos,
