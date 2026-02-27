@@ -4,40 +4,50 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/wbrown/ebnf"
 )
 
-// Parser uses an EBNF grammar to parse input text
+// parseState holds mutable per-parse state. A new parseState is created
+// for each Parse() call, making Parser safe for concurrent use.
+type parseState struct {
+	input         string
+	pos           int
+	line          int
+	col           int
+	depth         int
+	debugLog      strings.Builder
+	furthestPos   int
+	furthestLine  int
+	furthestCol   int
+	furthestError error
+	furthestRule  string
+}
+
+// Parser uses an EBNF grammar to parse input text.
+// After construction, Parser is safe for concurrent use from multiple goroutines.
+// Configure Debug, focusPos, and focusRange before concurrent use.
 type Parser struct {
-	grammar  *ebnf.Grammar
-	input    string
-	pos      int
-	line     int
-	col      int
-	Debug    bool            // Enable debug output
-	depth    int             // Track recursion depth for debug indentation
-	debugLog strings.Builder // Capture debug output
+	grammar *ebnf.Grammar
+	Debug   bool // Enable debug output
 
 	// Focused debugging
 	focusPos   int // Position to focus on (-1 = disabled)
 	focusRange int // Range around focus position
 
 	// Regex cache to avoid recompiling the same patterns
-	regexCache map[string]*regexp.Regexp
+	regexCache sync.Map // string -> *regexp.Regexp
 
 	// Expression rules that should be flattened (cached to avoid map allocation)
 	exprRules map[string]bool
 
-	// Track furthest position reached for better error messages
-	furthestPos   int    // Furthest position where parsing was attempted
-	furthestLine  int    // Line at furthest position
-	furthestCol   int    // Column at furthest position
-	furthestError error  // Error at furthest position
-	furthestRule  string // Rule being attempted at furthest position
-
 	// Case-insensitive matching (global default)
 	caseInsensitive bool
+
+	// Last debug log — captured at end of each Parse() call
+	lastDebugMu  sync.Mutex
+	lastDebugLog string
 }
 
 // Option is a function that configures a Parser
@@ -56,9 +66,8 @@ func WithCaseInsensitive(ci bool) Option {
 // New creates a new parser with the given EBNF grammar
 func New(grammar *ebnf.Grammar, opts ...Option) *Parser {
 	p := &Parser{
-		grammar:    grammar,
-		focusPos:   -1,
-		regexCache: make(map[string]*regexp.Regexp),
+		grammar:  grammar,
+		focusPos: -1,
 		exprRules: map[string]bool{
 			"or_expr":      true,
 			"and_expr":     true,
@@ -86,28 +95,46 @@ func (p *Parser) SetFocusedDebug(pos, rangeSize int) {
 }
 
 // debugf prints debug output if Debug is enabled or if we're in focus range
-func (p *Parser) debugf(format string, args ...interface{}) {
+func (p *Parser) debugf(s *parseState, format string, args ...interface{}) {
 	shouldDebug := p.Debug
 
 	// Check if we're in focused debug range
 	if p.focusPos >= 0 && !shouldDebug {
-		if p.pos >= p.focusPos-p.focusRange && p.pos <= p.focusPos+p.focusRange {
+		if s.pos >= p.focusPos-p.focusRange && s.pos <= p.focusPos+p.focusRange {
 			shouldDebug = true
 		}
 	}
 
 	if shouldDebug {
-		indent := strings.Repeat("  ", p.depth)
-		posInfo := fmt.Sprintf("[pos=%d,line=%d,col=%d]", p.pos, p.line, p.col)
+		indent := strings.Repeat("  ", s.depth)
+		posInfo := fmt.Sprintf("[pos=%d,line=%d,col=%d]", s.pos, s.line, s.col)
 		msg := fmt.Sprintf("%s%s %s\n", indent, posInfo, fmt.Sprintf(format, args...))
 		fmt.Print(msg)
-		p.debugLog.WriteString(msg)
+		s.debugLog.WriteString(msg)
 	}
 }
 
-// GetDebugLog returns the captured debug log
+// GetDebugLog returns the captured debug log from the most recent Parse() call.
+// Under concurrent use, returns whichever parse completed last.
 func (p *Parser) GetDebugLog() string {
-	return p.debugLog.String()
+	p.lastDebugMu.Lock()
+	log := p.lastDebugLog
+	p.lastDebugMu.Unlock()
+	return log
+}
+
+// getCachedRegex returns a compiled regex from the cache, compiling and caching
+// it on first access. Safe for concurrent use via sync.Map.
+func (p *Parser) getCachedRegex(pattern string) (*regexp.Regexp, error) {
+	if v, ok := p.regexCache.Load(pattern); ok {
+		return v.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := p.regexCache.LoadOrStore(pattern, re)
+	return actual.(*regexp.Regexp), nil
 }
 
 // Parse parses the input according to the grammar, starting with the given rule
@@ -118,49 +145,52 @@ func (p *Parser) Parse(input string, startRule string) (*ParseTree, error) {
 		return nil, newRuleNotFoundError(startRule)
 	}
 
-	// Initialize parser state - always reset for each parse
-	p.input = input
-	p.pos = 0
-	p.line = 1
-	p.col = 1
+	// Create per-parse mutable state
+	s := &parseState{
+		input:        input,
+		line:         1,
+		col:          1,
+		furthestLine: 1,
+		furthestCol:  1,
+	}
 
-	// Reset furthest position tracking
-	p.furthestPos = 0
-	p.furthestLine = 1
-	p.furthestCol = 1
-	p.furthestError = nil
-	p.furthestRule = ""
+	// Capture debug log at end of parse, regardless of outcome
+	defer func() {
+		p.lastDebugMu.Lock()
+		p.lastDebugLog = s.debugLog.String()
+		p.lastDebugMu.Unlock()
+	}()
 
 	// Parse starting from the rule
-	node, err := p.parseRule(startRule)
+	node, err := p.parseRule(s, startRule)
 	if err != nil {
 		return nil, err
 	}
 
 	// Ensure we consumed all input
-	if p.pos < len(p.input) {
-		remaining := p.input[p.pos:]
+	if s.pos < len(s.input) {
+		remaining := s.input[s.pos:]
 		if len(remaining) > 20 {
 			remaining = remaining[:20] + "..."
 		}
 
 		// Build detailed error message including furthest position info
-		details := fmt.Sprintf("unexpected input at line %d, col %d (pos %d/%d): %q", p.line, p.col, p.pos, len(p.input), remaining)
+		details := fmt.Sprintf("unexpected input at line %d, col %d (pos %d/%d): %q", s.line, s.col, s.pos, len(s.input), remaining)
 
 		// If we have info about why parsing stopped further ahead, include it
-		if p.furthestPos > p.pos && p.furthestError != nil {
+		if s.furthestPos > s.pos && s.furthestError != nil {
 			details += fmt.Sprintf("\n  furthest parse attempt at line %d, col %d (pos %d) in rule %q: %v",
-				p.furthestLine, p.furthestCol, p.furthestPos, p.furthestRule, p.furthestError)
-		} else if p.furthestError != nil && p.furthestRule != "" {
+				s.furthestLine, s.furthestCol, s.furthestPos, s.furthestRule, s.furthestError)
+		} else if s.furthestError != nil && s.furthestRule != "" {
 			details += fmt.Sprintf("\n  last failed rule %q at line %d: %v",
-				p.furthestRule, p.furthestLine, p.furthestError)
+				s.furthestRule, s.furthestLine, s.furthestError)
 		}
 
 		return nil, &ParseError{
 			Type:    ErrorExpectedEOF,
-			Pos:     p.pos,
-			Line:    p.line,
-			Col:     p.col,
+			Pos:     s.pos,
+			Line:    s.line,
+			Col:     s.col,
 			Details: details,
 		}
 	}
@@ -169,52 +199,52 @@ func (p *Parser) Parse(input string, startRule string) (*ParseTree, error) {
 }
 
 // recordFurthestError records an error if it's at or past the furthest position seen
-func (p *Parser) recordFurthestError(ruleName string, err error) {
-	if p.pos >= p.furthestPos {
-		p.furthestPos = p.pos
-		p.furthestLine = p.line
-		p.furthestCol = p.col
-		p.furthestError = err
-		p.furthestRule = ruleName
+func (p *Parser) recordFurthestError(s *parseState, ruleName string, err error) {
+	if s.pos >= s.furthestPos {
+		s.furthestPos = s.pos
+		s.furthestLine = s.line
+		s.furthestCol = s.col
+		s.furthestError = err
+		s.furthestRule = ruleName
 	}
 }
 
 // parseRule parses input according to a named rule
-func (p *Parser) parseRule(ruleName string) (*Node, error) {
+func (p *Parser) parseRule(s *parseState, ruleName string) (*Node, error) {
 	rule := p.grammar.GetRule(ruleName)
 	if rule == nil {
 		return nil, newRuleNotFoundError(ruleName)
 	}
 
 	// Save position for this rule
-	line := p.line
-	col := p.col
-	start := p.pos
+	line := s.line
+	col := s.col
+	start := s.pos
 
 	// Debug output
 	preview := ""
-	if p.pos < len(p.input) {
-		end := p.pos + 20
-		if end > len(p.input) {
-			end = len(p.input)
+	if s.pos < len(s.input) {
+		end := s.pos + 20
+		if end > len(s.input) {
+			end = len(s.input)
 		}
-		preview = strings.ReplaceAll(p.input[p.pos:end], "\n", "\\n")
-		if end < len(p.input) {
+		preview = strings.ReplaceAll(s.input[s.pos:end], "\n", "\\n")
+		if end < len(s.input) {
 			preview += "..."
 		}
 	}
-	p.debugf("Trying rule %s at pos %d: %q", ruleName, p.pos, preview)
-	p.depth++
+	p.debugf(s, "Trying rule %s at pos %d: %q", ruleName, s.pos, preview)
+	s.depth++
 
 	// Parse the rule's expression first
-	children, err := p.parseExpression(rule.Expression)
-	p.depth--
+	children, err := p.parseExpression(s, rule.Expression)
+	s.depth--
 	if err != nil {
-		p.debugf("Rule %s failed: %v", ruleName, err)
-		p.recordFurthestError(ruleName, err)
+		p.debugf(s, "Rule %s failed: %v", ruleName, err)
+		p.recordFurthestError(s, ruleName, err)
 		return nil, wrapRuleError(ruleName, err)
 	}
-	p.debugf("Rule %s succeeded", ruleName)
+	p.debugf(s, "Rule %s succeeded", ruleName)
 
 	// Check if this is an expression pass-through node with a single non-terminal child
 	if p.shouldFlatten(ruleName, children) {
@@ -235,7 +265,7 @@ func (p *Parser) parseRule(ruleName string) (*Node, error) {
 		Line:     line,
 		Column:   col,
 		Start:    start,
-		End:      p.pos,
+		End:      s.pos,
 		Children: children,
 	}
 
@@ -252,50 +282,50 @@ func (p *Parser) shouldFlatten(ruleName string, children []*Node) bool {
 }
 
 // parseExpression parses an EBNF expression and returns the resulting nodes
-func (p *Parser) parseExpression(expr ebnf.Expression) ([]*Node, error) {
+func (p *Parser) parseExpression(s *parseState, expr ebnf.Expression) ([]*Node, error) {
 	switch e := expr.(type) {
 	case *ebnf.Terminal:
-		return p.parseTerminal(e)
+		return p.parseTerminal(s, e)
 	case *ebnf.NonTerminal:
-		return p.parseNonTerminal(e)
+		return p.parseNonTerminal(s, e)
 	case *ebnf.Sequence:
-		return p.parseSequence(e)
+		return p.parseSequence(s, e)
 	case *ebnf.Choice:
-		return p.parseChoice(e)
+		return p.parseChoice(s, e)
 	case *ebnf.OrderedChoice:
-		return p.parseOrderedChoice(e)
+		return p.parseOrderedChoice(s, e)
 	case *ebnf.Optional:
-		return p.parseOptional(e)
+		return p.parseOptional(s, e)
 	case *ebnf.Repetition:
-		return p.parseRepetition(e)
+		return p.parseRepetition(s, e)
 	case *ebnf.Group:
-		return p.parseExpression(e.Expr)
+		return p.parseExpression(s, e.Expr)
 	case *ebnf.CharClass:
-		return p.parseCharClass(e)
+		return p.parseCharClass(s, e)
 	case *ebnf.OneOrMore:
-		return p.parseOneOrMore(e)
+		return p.parseOneOrMore(s, e)
 	case *ebnf.Hidden:
 		// Parse the hidden expression but don't return any nodes
-		_, err := p.parseExpression(e.Expr)
+		_, err := p.parseExpression(s, e.Expr)
 		return []*Node{}, err
 	case *ebnf.Regex:
-		return p.parseRegex(e)
+		return p.parseRegex(s, e)
 	case *ebnf.Predicate:
-		return p.parsePredicate(e)
+		return p.parsePredicate(s, e)
 	case *ebnf.PositiveLookahead:
-		return p.parsePositiveLookahead(e)
+		return p.parsePositiveLookahead(s, e)
 	default:
 		return nil, newUnknownExpressionError(fmt.Sprintf("%T", expr))
 	}
 }
 
 // parseCharClass matches a single character from a character class
-func (p *Parser) parseCharClass(cc *ebnf.CharClass) ([]*Node, error) {
-	if p.pos >= len(p.input) {
-		return nil, newUnexpectedEOFError("character from class", p.line, p.col)
+func (p *Parser) parseCharClass(s *parseState, cc *ebnf.CharClass) ([]*Node, error) {
+	if s.pos >= len(s.input) {
+		return nil, newUnexpectedEOFError("character from class", s.line, s.col)
 	}
 
-	ch := rune(p.input[p.pos])
+	ch := rune(s.input[s.pos])
 	matched := false
 
 	// Check single characters
@@ -322,34 +352,34 @@ func (p *Parser) parseCharClass(cc *ebnf.CharClass) ([]*Node, error) {
 	}
 
 	if !matched {
-		return nil, newCharClassMismatchError(string(ch), p.line, p.col)
+		return nil, newCharClassMismatchError(string(ch), s.line, s.col)
 	}
 
 	// Create node
 	node := &Node{
 		Value:  string(ch),
-		Line:   p.line,
-		Column: p.col,
-		Start:  p.pos,
-		End:    p.pos + 1,
+		Line:   s.line,
+		Column: s.col,
+		Start:  s.pos,
+		End:    s.pos + 1,
 	}
 
 	// Advance position
 	if ch == '\n' {
-		p.line++
-		p.col = 1
+		s.line++
+		s.col = 1
 	} else {
-		p.col++
+		s.col++
 	}
-	p.pos++
+	s.pos++
 
 	return []*Node{node}, nil
 }
 
 // parseTerminal matches a terminal string
-func (p *Parser) parseTerminal(term *ebnf.Terminal) ([]*Node, error) {
-	if p.pos >= len(p.input) {
-		return nil, newUnexpectedEOFError(fmt.Sprintf("%q", term.Value), p.line, p.col)
+func (p *Parser) parseTerminal(s *parseState, term *ebnf.Terminal) ([]*Node, error) {
+	if s.pos >= len(s.input) {
+		return nil, newUnexpectedEOFError(fmt.Sprintf("%q", term.Value), s.line, s.col)
 	}
 
 	// The terminal value from EBNF already has escape sequences properly interpreted
@@ -364,44 +394,44 @@ func (p *Parser) parseTerminal(term *ebnf.Terminal) ([]*Node, error) {
 	var matched bool
 	if caseInsensitive {
 		// Case-insensitive matching using EqualFold (faster than regex)
-		if len(p.input)-p.pos >= len(termValue) {
-			matched = strings.EqualFold(p.input[p.pos:p.pos+len(termValue)], termValue)
+		if len(s.input)-s.pos >= len(termValue) {
+			matched = strings.EqualFold(s.input[s.pos:s.pos+len(termValue)], termValue)
 		}
 	} else {
 		// Case-sensitive matching
-		matched = strings.HasPrefix(p.input[p.pos:], termValue)
+		matched = strings.HasPrefix(s.input[s.pos:], termValue)
 	}
 
 	if !matched {
 		// For better error messages, show what we got
-		preview := p.input[p.pos:]
+		preview := s.input[s.pos:]
 		if len(preview) > 20 {
 			preview = preview[:20] + "..."
 		}
-		return nil, newExpectedTerminalError(termValue, preview, p.line, p.col)
+		return nil, newExpectedTerminalError(termValue, preview, s.line, s.col)
 	}
 
 	// Get the actual matched text from input (preserves original case)
-	matchedValue := p.input[p.pos : p.pos+len(termValue)]
+	matchedValue := s.input[s.pos : s.pos+len(termValue)]
 
 	// Create node for this terminal
 	node := &Node{
 		Value:  matchedValue,
-		Line:   p.line,
-		Column: p.col,
-		Start:  p.pos,
-		End:    p.pos + len(termValue),
+		Line:   s.line,
+		Column: s.col,
+		Start:  s.pos,
+		End:    s.pos + len(termValue),
 	}
 
 	// Advance position
 	for i := 0; i < len(termValue); i++ {
-		if p.input[p.pos] == '\n' {
-			p.line++
-			p.col = 1
+		if s.input[s.pos] == '\n' {
+			s.line++
+			s.col = 1
 		} else {
-			p.col++
+			s.col++
 		}
-		p.pos++
+		s.pos++
 	}
 
 	// Only return node if not hidden
@@ -412,57 +442,50 @@ func (p *Parser) parseTerminal(term *ebnf.Terminal) ([]*Node, error) {
 }
 
 // parseRegex matches input against a regular expression pattern
-func (p *Parser) parseRegex(regex *ebnf.Regex) ([]*Node, error) {
-	if p.pos >= len(p.input) {
-		return nil, newUnexpectedEOFError(fmt.Sprintf("pattern %q", regex.Pattern), p.line, p.col)
+func (p *Parser) parseRegex(s *parseState, regex *ebnf.Regex) ([]*Node, error) {
+	if s.pos >= len(s.input) {
+		return nil, newUnexpectedEOFError(fmt.Sprintf("pattern %q", regex.Pattern), s.line, s.col)
 	}
 
-	// Get or compile the regex (with caching)
+	// Get or compile the regex (with thread-safe caching)
 	cacheKey := "^" + regex.Pattern
-	re, ok := p.regexCache[cacheKey]
-	if !ok {
-		// Compile the regex with anchoring to match from the start
-		var err error
-		re, err = regexp.Compile(cacheKey)
-		if err != nil {
-			return nil, newInvalidRegexError(regex.Pattern, err)
-		}
-		// Cache the compiled regex
-		p.regexCache[cacheKey] = re
+	re, err := p.getCachedRegex(cacheKey)
+	if err != nil {
+		return nil, newInvalidRegexError(regex.Pattern, err)
 	}
 
 	// Find match at current position
-	loc := re.FindStringIndex(p.input[p.pos:])
+	loc := re.FindStringIndex(s.input[s.pos:])
 	if loc == nil || loc[0] != 0 {
 		// No match at current position
-		preview := p.input[p.pos:]
+		preview := s.input[s.pos:]
 		if len(preview) > 20 {
 			preview = preview[:20] + "..."
 		}
-		return nil, newRegexNoMatchError(regex.Pattern, preview, p.line, p.col)
+		return nil, newRegexNoMatchError(regex.Pattern, preview, s.line, s.col)
 	}
 
 	// Extract the matched text
-	matchedText := p.input[p.pos : p.pos+loc[1]]
+	matchedText := s.input[s.pos : s.pos+loc[1]]
 
 	// Create node for this match
 	node := &Node{
 		Value:  matchedText,
-		Line:   p.line,
-		Column: p.col,
-		Start:  p.pos,
-		End:    p.pos + len(matchedText),
+		Line:   s.line,
+		Column: s.col,
+		Start:  s.pos,
+		End:    s.pos + len(matchedText),
 	}
 
 	// Advance position, tracking line and column
 	for i := 0; i < len(matchedText); i++ {
-		if p.input[p.pos] == '\n' {
-			p.line++
-			p.col = 1
+		if s.input[s.pos] == '\n' {
+			s.line++
+			s.col = 1
 		} else {
-			p.col++
+			s.col++
 		}
-		p.pos++
+		s.pos++
 	}
 
 	// Only return node if not hidden
@@ -473,19 +496,19 @@ func (p *Parser) parseRegex(regex *ebnf.Regex) ([]*Node, error) {
 }
 
 // parsePredicate parses a negative lookahead (!expr)
-func (p *Parser) parsePredicate(pred *ebnf.Predicate) ([]*Node, error) {
+func (p *Parser) parsePredicate(s *parseState, pred *ebnf.Predicate) ([]*Node, error) {
 	// Save current position
-	savedPos, savedLine, savedCol := p.savePosition()
+	savedPos, savedLine, savedCol := p.savePosition(s)
 
 	// Try to match the expression
-	_, err := p.parseExpression(pred.Expr)
+	_, err := p.parseExpression(s, pred.Expr)
 
 	// Restore position regardless of result
-	p.restorePosition(savedPos, savedLine, savedCol)
+	p.restorePosition(s, savedPos, savedLine, savedCol)
 
 	if err == nil {
 		// If the expression matched, the negative lookahead fails
-		return nil, newNegativeLookaheadError(p.line, p.col)
+		return nil, newNegativeLookaheadError(s.line, s.col)
 	}
 
 	// Expression didn't match, negative lookahead succeeds
@@ -493,19 +516,19 @@ func (p *Parser) parsePredicate(pred *ebnf.Predicate) ([]*Node, error) {
 }
 
 // parsePositiveLookahead parses a positive lookahead (&expr)
-func (p *Parser) parsePositiveLookahead(pos *ebnf.PositiveLookahead) ([]*Node, error) {
+func (p *Parser) parsePositiveLookahead(s *parseState, pos *ebnf.PositiveLookahead) ([]*Node, error) {
 	// Save current position
-	savedPos, savedLine, savedCol := p.savePosition()
+	savedPos, savedLine, savedCol := p.savePosition(s)
 
 	// Try to match the expression
-	_, err := p.parseExpression(pos.Expr)
+	_, err := p.parseExpression(s, pos.Expr)
 
 	// Restore position regardless of result
-	p.restorePosition(savedPos, savedLine, savedCol)
+	p.restorePosition(s, savedPos, savedLine, savedCol)
 
 	if err != nil {
 		// If the expression didn't match, the positive lookahead fails
-		return nil, newPositiveLookaheadError(p.line, p.col, err)
+		return nil, newPositiveLookaheadError(s.line, s.col, err)
 	}
 
 	// Expression matched, positive lookahead succeeds
@@ -513,13 +536,13 @@ func (p *Parser) parsePositiveLookahead(pos *ebnf.PositiveLookahead) ([]*Node, e
 }
 
 // parseNonTerminal parses a reference to another rule
-func (p *Parser) parseNonTerminal(nt *ebnf.NonTerminal) ([]*Node, error) {
+func (p *Parser) parseNonTerminal(s *parseState, nt *ebnf.NonTerminal) ([]*Node, error) {
 	rule := p.grammar.GetRule(nt.Name)
 	if rule == nil {
 		return nil, newRuleNotFoundError(nt.Name)
 	}
 
-	node, err := p.parseRule(nt.Name)
+	node, err := p.parseRule(s, nt.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -545,11 +568,11 @@ func (p *Parser) parseNonTerminal(nt *ebnf.NonTerminal) ([]*Node, error) {
 }
 
 // parseSequence parses a sequence of expressions
-func (p *Parser) parseSequence(seq *ebnf.Sequence) ([]*Node, error) {
+func (p *Parser) parseSequence(s *parseState, seq *ebnf.Sequence) ([]*Node, error) {
 	var result []*Node
 
 	for _, elem := range seq.Elements {
-		nodes, err := p.parseExpression(elem)
+		nodes, err := p.parseExpression(s, elem)
 		if err != nil {
 			return nil, err
 		}
@@ -560,48 +583,48 @@ func (p *Parser) parseSequence(seq *ebnf.Sequence) ([]*Node, error) {
 }
 
 // savePosition saves the current parser position
-func (p *Parser) savePosition() (int, int, int) {
-	p.debugf("SAVE POSITION")
-	return p.pos, p.line, p.col
+func (p *Parser) savePosition(s *parseState) (int, int, int) {
+	p.debugf(s, "SAVE POSITION")
+	return s.pos, s.line, s.col
 }
 
 // restorePosition restores a saved parser position
-func (p *Parser) restorePosition(pos, line, col int) {
-	p.debugf("RESTORE POSITION from [pos=%d,line=%d,col=%d]", pos, line, col)
-	p.pos = pos
-	p.line = line
-	p.col = col
+func (p *Parser) restorePosition(s *parseState, pos, line, col int) {
+	p.debugf(s, "RESTORE POSITION from [pos=%d,line=%d,col=%d]", pos, line, col)
+	s.pos = pos
+	s.line = line
+	s.col = col
 }
 
 // parseChoice tries each alternative until one succeeds
-func (p *Parser) parseChoice(choice *ebnf.Choice) ([]*Node, error) {
+func (p *Parser) parseChoice(s *parseState, choice *ebnf.Choice) ([]*Node, error) {
 	var lastErr error
 
 	// Save current position for backtracking
-	savedPos, savedLine, savedCol := p.savePosition()
+	savedPos, savedLine, savedCol := p.savePosition(s)
 
-	p.debugf("Trying %d alternatives", len(choice.Alternatives))
-	p.depth++
+	p.debugf(s, "Trying %d alternatives", len(choice.Alternatives))
+	s.depth++
 
 	for i, alt := range choice.Alternatives {
-		p.debugf("Alternative %d", i+1)
-		p.depth++
+		p.debugf(s, "Alternative %d", i+1)
+		s.depth++
 		// Try this alternative
-		nodes, err := p.parseExpression(alt)
-		p.depth--
+		nodes, err := p.parseExpression(s, alt)
+		s.depth--
 		if err == nil {
-			p.depth--
-			p.debugf("Alternative %d succeeded", i+1)
+			s.depth--
+			p.debugf(s, "Alternative %d succeeded", i+1)
 			return nodes, nil
 		}
 
 		// Failed, restore position and try next
-		p.debugf("Alternative %d failed: %v", i+1, err)
+		p.debugf(s, "Alternative %d failed: %v", i+1, err)
 		lastErr = err
 		// Don't allocate error wrapping - just track the last error
-		p.restorePosition(savedPos, savedLine, savedCol)
+		p.restorePosition(s, savedPos, savedLine, savedCol)
 	}
-	p.depth--
+	s.depth--
 
 	// Return error only after all alternatives fail
 	return nil, newNoAltMatchedError(len(choice.Alternatives), lastErr)
@@ -609,22 +632,22 @@ func (p *Parser) parseChoice(choice *ebnf.Choice) ([]*Node, error) {
 
 // parseOrderedChoice tries each alternative in order and returns the first that succeeds
 // This is the PEG-style ordered choice (/) - no ambiguity, first match wins
-func (p *Parser) parseOrderedChoice(choice *ebnf.OrderedChoice) ([]*Node, error) {
+func (p *Parser) parseOrderedChoice(s *parseState, choice *ebnf.OrderedChoice) ([]*Node, error) {
 	var lastErr error
 
 	// Save current position for backtracking
-	savedPos, savedLine, savedCol := p.savePosition()
+	savedPos, savedLine, savedCol := p.savePosition(s)
 
 	for _, alt := range choice.Alternatives {
 		// Try this alternative
-		nodes, err := p.parseExpression(alt)
+		nodes, err := p.parseExpression(s, alt)
 		if err == nil {
 			return nodes, nil
 		}
 
 		// Failed, restore position and try next
 		lastErr = err
-		p.restorePosition(savedPos, savedLine, savedCol)
+		p.restorePosition(s, savedPos, savedLine, savedCol)
 	}
 
 	// Return the last error (simpler for ordered choice)
@@ -632,44 +655,44 @@ func (p *Parser) parseOrderedChoice(choice *ebnf.OrderedChoice) ([]*Node, error)
 }
 
 // parseOptional tries to parse the expression, returns empty if it fails
-func (p *Parser) parseOptional(opt *ebnf.Optional) ([]*Node, error) {
+func (p *Parser) parseOptional(s *parseState, opt *ebnf.Optional) ([]*Node, error) {
 	// Save current position
-	savedPos, savedLine, savedCol := p.savePosition()
+	savedPos, savedLine, savedCol := p.savePosition(s)
 
-	nodes, err := p.parseExpression(opt.Expr)
+	nodes, err := p.parseExpression(s, opt.Expr)
 	if err == nil {
 		return nodes, nil
 	}
 
 	// Failed, restore position and return empty
-	p.restorePosition(savedPos, savedLine, savedCol)
+	p.restorePosition(s, savedPos, savedLine, savedCol)
 	return []*Node{}, nil
 }
 
 // parseRepetition parses zero or more (*)
-func (p *Parser) parseRepetition(rep *ebnf.Repetition) ([]*Node, error) {
+func (p *Parser) parseRepetition(s *parseState, rep *ebnf.Repetition) ([]*Node, error) {
 	// Special handling for character class repetitions that should be consolidated
 	if p.isCharacterClassExpression(rep.Expr) {
-		return p.parseConsolidatedRepetition(rep.Expr, false)
+		return p.parseConsolidatedRepetition(s, rep.Expr, false)
 	}
 
 	var result []*Node
 
 	for {
 		// Save position before trying
-		savedPos, savedLine, savedCol := p.savePosition()
+		savedPos, savedLine, savedCol := p.savePosition(s)
 
-		nodes, err := p.parseExpression(rep.Expr)
+		nodes, err := p.parseExpression(s, rep.Expr)
 		if err != nil {
 			// Restore position
-			p.restorePosition(savedPos, savedLine, savedCol)
+			p.restorePosition(s, savedPos, savedLine, savedCol)
 			break
 		}
 
 		// Check if we actually consumed input even if no nodes were returned
 		// This handles the case of hidden expressions that consume input
 		// but don't produce nodes
-		if p.pos == savedPos {
+		if s.pos == savedPos {
 			// No progress made, stop to avoid infinite loop
 			break
 		}
@@ -715,23 +738,23 @@ func (p *Parser) isCharacterClassExpression(expr ebnf.Expression) bool {
 
 // parseConsolidatedRepetition handles character class repetitions
 // Creates a single consolidated value node from multiple matches
-func (p *Parser) parseConsolidatedRepetition(expr ebnf.Expression, requireOne bool) ([]*Node, error) {
-	startPos := p.pos
-	startLine := p.line
-	startCol := p.col
+func (p *Parser) parseConsolidatedRepetition(s *parseState, expr ebnf.Expression, requireOne bool) ([]*Node, error) {
+	startPos := s.pos
+	startLine := s.line
+	startCol := s.col
 	count := 0
 
 	for {
-		savedPos, savedLine, savedCol := p.savePosition()
+		savedPos, savedLine, savedCol := p.savePosition(s)
 
-		_, err := p.parseExpression(expr)
+		_, err := p.parseExpression(s, expr)
 		if err != nil {
-			p.restorePosition(savedPos, savedLine, savedCol)
+			p.restorePosition(s, savedPos, savedLine, savedCol)
 			break
 		}
 
 		// Check if we made progress
-		if p.pos == savedPos {
+		if s.pos == savedPos {
 			break
 		}
 		count++
@@ -742,13 +765,13 @@ func (p *Parser) parseConsolidatedRepetition(expr ebnf.Expression, requireOne bo
 	}
 
 	// Create a single consolidated value node from the matched text
-	if p.pos > startPos {
+	if s.pos > startPos {
 		node := &Node{
-			Value:  p.input[startPos:p.pos],
+			Value:  s.input[startPos:s.pos],
 			Line:   startLine,
 			Column: startCol,
 			Start:  startPos,
-			End:    p.pos,
+			End:    s.pos,
 		}
 		return []*Node{node}, nil
 	}
@@ -757,10 +780,10 @@ func (p *Parser) parseConsolidatedRepetition(expr ebnf.Expression, requireOne bo
 }
 
 // parseOneOrMore parses one or more (+)
-func (p *Parser) parseOneOrMore(rep *ebnf.OneOrMore) ([]*Node, error) {
+func (p *Parser) parseOneOrMore(s *parseState, rep *ebnf.OneOrMore) ([]*Node, error) {
 	// Special handling for character class repetitions that should be consolidated
 	if p.isCharacterClassExpression(rep.Expr) {
-		return p.parseConsolidatedRepetition(rep.Expr, true)
+		return p.parseConsolidatedRepetition(s, rep.Expr, true)
 	}
 
 	var result []*Node
@@ -768,18 +791,18 @@ func (p *Parser) parseOneOrMore(rep *ebnf.OneOrMore) ([]*Node, error) {
 
 	for {
 		// Save position before trying
-		savedPos, savedLine, savedCol := p.savePosition()
+		savedPos, savedLine, savedCol := p.savePosition(s)
 
-		nodes, err := p.parseExpression(rep.Expr)
+		nodes, err := p.parseExpression(s, rep.Expr)
 		if err != nil {
 			// Restore position
-			p.restorePosition(savedPos, savedLine, savedCol)
+			p.restorePosition(s, savedPos, savedLine, savedCol)
 			break
 		}
 
 		// Check if we actually consumed input even if no nodes were returned
 		// This handles the case of hidden expressions
-		if p.pos > savedPos {
+		if s.pos > savedPos {
 			count++
 		}
 
