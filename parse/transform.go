@@ -217,13 +217,14 @@ func transformNodeWithContextAndOpts(node *Node, parent *Node, siblings []*Node,
 	if preserveStructure {
 		// Preserve structure: return a Node with transformed children
 		preservedNode := &Node{
-			Rule:     node.Rule,
-			Value:    node.Value,
-			Line:     node.Line,
-			Column:   node.Column,
-			Start:    node.Start,
-			End:      node.End,
-			Children: make([]*Node, len(transformedChildren)),
+			Rule:             node.Rule,
+			Value:            node.Value,
+			TransformedValue: node.TransformedValue,
+			Line:             node.Line,
+			Column:           node.Column,
+			Start:            node.Start,
+			End:              node.End,
+			Children:         make([]*Node, len(transformedChildren)),
 		}
 		// Convert transformed children back to Nodes if possible
 		for i, tc := range transformedChildren {
