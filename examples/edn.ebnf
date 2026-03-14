@@ -1,0 +1,92 @@
+(* EDN (Extensible Data Notation) Grammar *)
+(* https://github.com/edn-format/edn *)
+(* EDN is the data subset of Clojure syntax — no reader macros, no code. *)
+(* Derived from the Clojure grammar in narrative-generators/pkg/clojure. *)
+
+(* ================================================================= *)
+(* ROOT *)
+(* ================================================================= *)
+
+(* An EDN document is one or more values separated by whitespace. *)
+edn = <ws*> value ( <ws+> value )* <ws*> ;
+
+(* ================================================================= *)
+(* VALUES *)
+(* ================================================================= *)
+
+(* Ordered choice: tagged literals first (#inst, #uuid), then *)
+(* collections, then atoms. Discard (#_) is the only reader macro *)
+(* EDN supports. *)
+<value> = discard / tagged / collection / atom ;
+
+(* ================================================================= *)
+(* ATOMS *)
+(* ================================================================= *)
+
+(* Ordered choice matters: string before symbol (both can start with *)
+(* alpha after prefix), float before integer (3.14 vs 3), nil/boolean *)
+(* use boundary checks to avoid matching prefixes of symbols. *)
+atom = string / character / nil_lit / boolean / float / integer / keyword / symbol ;
+
+nil_lit = "nil" !sym_char ;
+boolean = ( "true" / "false" ) !sym_char ;
+
+(* Numbers: float tried before integer so 3.14 doesn't match as 3. *)
+integer = #"[+-]?[0-9]+" !sym_char ;
+float   = #"[+-]?[0-9]+(\.[0-9]+)?[eE][+-]?[0-9]+" !sym_char
+        / #"[+-]?[0-9]+\.[0-9]*" !sym_char ;
+
+(* Strings: double-quoted with escape sequences. *)
+string = #"\"([^\"\\]|\\.)*\"" ;
+
+(* Characters: \newline, \space, \tab, \return, or \X *)
+character = #"\\(newline|return|space|tab|[^\s,\)\]\}])" ;
+
+(* Keywords: :name, :ns/name *)
+keyword = #":[a-zA-Z.*+!\-_?$%&=<>][a-zA-Z0-9.*+!\-_?$%&=<>/':#.]*"
+        / #":/" ;
+
+(* Symbols: identifiers. Catch-all — must come last in atom. *)
+symbol = #"[a-zA-Z.*!_?$%&=<>][a-zA-Z0-9.*+!\-_?$%&=<>/':#.]*"
+       / #"[+\-][a-zA-Z.*+!\-_?$%&=<>/':#.][a-zA-Z0-9.*+!\-_?$%&=<>/':#.]*"
+       / #"[+\-]" !sym_char
+       / "/" !sym_char ;
+
+(* ================================================================= *)
+(* COLLECTIONS *)
+(* ================================================================= *)
+
+collection = list / vector / hash_map / set ;
+
+list     = <"("> <ws*> ( value <ws*> )* <")"> ;
+vector   = <"["> <ws*> ( value <ws*> )* <"]"> ;
+hash_map = <"{"> <ws*> ( value <ws*> )* <"}"> ;
+set      = <"#{"> <ws*> ( value <ws*> )* <"}"> ;
+
+(* ================================================================= *)
+(* TAGGED LITERALS *)
+(* ================================================================= *)
+
+(* EDN supports #tag value for extensible types. *)
+(* Common built-in tags: #inst "..." and #uuid "..." *)
+tagged = <"#"> tag_name <ws+> value ;
+tag_name = #"[a-zA-Z][a-zA-Z0-9.*+!\-_?$%&=<>/]*" ;
+
+(* ================================================================= *)
+(* DISCARD *)
+(* ================================================================= *)
+
+(* #_ discards the next form — the only reader macro EDN keeps. *)
+discard = <"#_"> <ws*> value ;
+
+(* ================================================================= *)
+(* WHITESPACE *)
+(* ================================================================= *)
+
+(* Whitespace includes commas (idiomatic in EDN for readability). *)
+(* Comments run from ; to end of line. Both are hidden from the tree. *)
+<ws> = #"[\s,]+" / comment ;
+<comment> = #";[^\n]*" ;
+
+(* Symbol character — used only in negative lookahead for boundary checks. *)
+<sym_char> = #"[a-zA-Z0-9.*+!\-_?$%&=<>/':#.]" ;
